@@ -473,52 +473,33 @@ mod tests {
         FabricLaunch, Instance, InstanceConfig, InstanceId, InstanceName, InstanceState,
     };
     use crate::runtime::FabricRuntime;
+    use crate::test_support::TestDirectory;
     use std::fs;
     use std::os::unix::fs::PermissionsExt;
-    use std::path::PathBuf;
     use std::str::FromStr;
-    use std::sync::atomic::{AtomicU64, Ordering};
     use std::time::Duration;
-
-    static TEST_SEQUENCE: AtomicU64 = AtomicU64::new(0);
-
-    struct TestDirectory(PathBuf);
-
-    impl TestDirectory {
-        fn new() -> Self {
-            let sequence = TEST_SEQUENCE.fetch_add(1, Ordering::Relaxed);
-            let path = std::env::temp_dir().join(format!(
-                "dart-supervisor-test-{}-{sequence}",
-                std::process::id()
-            ));
-            fs::create_dir(&path).unwrap();
-            Self(path)
-        }
-    }
-
-    impl Drop for TestDirectory {
-        fn drop(&mut self) {
-            let _ = fs::remove_dir_all(&self.0);
-        }
-    }
 
     #[tokio::test]
     async fn streams_console_commands_and_stops_gracefully() {
-        let directory = TestDirectory::new();
-        let fake_java = directory.0.join("fake-java.sh");
+        let directory = TestDirectory::new("supervisor");
+        let fake_java = directory.path().join("fake-java.sh");
         fs::write(
             &fake_java,
             "#!/bin/sh\necho ready\nwhile IFS= read -r line; do\n  echo command:$line\n  [ \"$line\" = stop ] && exit 0\ndone\n",
         )
         .unwrap();
         fs::set_permissions(&fake_java, fs::Permissions::from_mode(0o755)).unwrap();
-        fs::write(directory.0.join("fabric-server-launch.jar"), "fixture").unwrap();
+        fs::write(directory.path().join("fabric-server-launch.jar"), "fixture").unwrap();
 
         let id = InstanceId::from_str("test-server").unwrap();
-        let launch = FabricLaunch::new(fake_java, 64, 128).unwrap();
+        let launch = FabricLaunch {
+            java: fake_java,
+            min_memory_mib: 64,
+            max_memory_mib: 128,
+        };
         let instance = Instance::new(
             id.clone(),
-            directory.0.clone(),
+            directory.path().to_owned(),
             InstanceConfig::new(
                 InstanceName::parse("Test server").unwrap(),
                 launch,
@@ -577,16 +558,20 @@ mod tests {
 
     #[tokio::test]
     async fn explains_when_the_java_executable_is_missing() {
-        let directory = TestDirectory::new();
-        fs::write(directory.0.join("fabric-server-launch.jar"), "fixture").unwrap();
+        let directory = TestDirectory::new("supervisor");
+        fs::write(directory.path().join("fabric-server-launch.jar"), "fixture").unwrap();
         let id = InstanceId::from_str("missing-java").unwrap();
-        let missing_java = directory.0.join("java-does-not-exist");
+        let missing_java = directory.path().join("java-does-not-exist");
         let instance = Instance::new(
             id,
-            directory.0.clone(),
+            directory.path().to_owned(),
             InstanceConfig::new(
                 InstanceName::parse("Missing Java").unwrap(),
-                FabricLaunch::new(missing_java, 64, 128).unwrap(),
+                FabricLaunch {
+                    java: missing_java,
+                    min_memory_mib: 64,
+                    max_memory_mib: 128,
+                },
                 FabricRuntime::new("26.2", "0.19.3", "1.1.2").unwrap(),
             ),
         );

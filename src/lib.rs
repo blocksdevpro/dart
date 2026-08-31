@@ -1,9 +1,11 @@
-pub mod app;
-pub mod content;
-pub mod instance;
-pub mod mods;
-pub mod packs;
-pub mod runtime;
-pub mod store;
-pub mod supervisor;
-pub mod ui;
+pub mod cli;
+mod instance;
+mod paths;
+mod runtime;
+mod service;
+mod store;
+mod supervisor;
+mod ui;
+
+#[cfg(test)]
+pub(crate) mod test_support;

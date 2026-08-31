@@ -40,19 +40,19 @@ impl FromStr for InstanceId {
 
     fn from_str(value: &str) -> Result<Self, Self::Err> {
         if value.is_empty() || value.len() > 64 {
-            return Err(InstanceIdError::InvalidLength);
+            return Err(InstanceIdError::Length);
         }
 
         let is_edge = |byte: u8| byte.is_ascii_lowercase() || byte.is_ascii_digit();
         if !is_edge(value.as_bytes()[0]) || !is_edge(value.as_bytes()[value.len() - 1]) {
-            return Err(InstanceIdError::InvalidEdge);
+            return Err(InstanceIdError::Edge);
         }
 
         if !value
             .bytes()
             .all(|byte| byte.is_ascii_lowercase() || byte.is_ascii_digit() || byte == b'-')
         {
-            return Err(InstanceIdError::InvalidCharacter);
+            return Err(InstanceIdError::Character);
         }
 
         Ok(Self(value.to_owned()))
@@ -61,19 +61,19 @@ impl FromStr for InstanceId {
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum InstanceIdError {
-    InvalidLength,
-    InvalidEdge,
-    InvalidCharacter,
+    Length,
+    Edge,
+    Character,
 }
 
 impl fmt::Display for InstanceIdError {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::InvalidLength => formatter.write_str("must contain between 1 and 64 characters"),
-            Self::InvalidEdge => {
+            Self::Length => formatter.write_str("must contain between 1 and 64 characters"),
+            Self::Edge => {
                 formatter.write_str("must start and end with a lowercase letter or digit")
             }
-            Self::InvalidCharacter => {
+            Self::Character => {
                 formatter.write_str("may contain only lowercase letters, digits, and hyphens")
             }
         }
@@ -102,10 +102,6 @@ impl InstanceName {
         Ok(Self(name.to_owned()))
     }
 
-    pub fn as_str(&self) -> &str {
-        &self.0
-    }
-
     fn validate(&self) -> Result<(), InstanceValidationError> {
         Self::parse(&self.0).map(|_| ())
     }
@@ -125,20 +121,6 @@ pub struct FabricLaunch {
 }
 
 impl FabricLaunch {
-    pub fn new(
-        java: PathBuf,
-        min_memory_mib: u32,
-        max_memory_mib: u32,
-    ) -> Result<Self, InstanceValidationError> {
-        let launch = Self {
-            java,
-            min_memory_mib,
-            max_memory_mib,
-        };
-        launch.validate()?;
-        Ok(launch)
-    }
-
     fn validate(&self) -> Result<(), InstanceValidationError> {
         if self.java.as_os_str().is_empty() {
             return Err(InstanceValidationError::EmptyJavaCommand);
@@ -270,7 +252,9 @@ impl std::error::Error for InstanceValidationError {}
 
 #[cfg(test)]
 mod tests {
-    use super::InstanceId;
+    use super::{FabricLaunch, InstanceConfig, InstanceId, InstanceName, InstanceValidationError};
+    use crate::runtime::FabricRuntime;
+    use std::path::PathBuf;
     use std::str::FromStr;
 
     #[test]
@@ -294,5 +278,43 @@ mod tests {
         ] {
             assert!(InstanceId::from_str(id).is_err(), "{id} must be rejected");
         }
+    }
+
+    #[test]
+    fn rejects_an_empty_persisted_java_command() {
+        let config = InstanceConfig {
+            format_version: super::CONFIG_FORMAT_VERSION,
+            name: InstanceName::parse("Survival").unwrap(),
+            launch: FabricLaunch {
+                java: PathBuf::new(),
+                min_memory_mib: 2048,
+                max_memory_mib: 1024,
+            },
+            fabric: FabricRuntime::new("1.21.8", "0.17.2", "1.1.2").unwrap(),
+        };
+
+        assert!(matches!(
+            config.validate(),
+            Err(InstanceValidationError::EmptyJavaCommand)
+        ));
+    }
+
+    #[test]
+    fn rejects_an_inverted_persisted_memory_range() {
+        let config = InstanceConfig {
+            format_version: super::CONFIG_FORMAT_VERSION,
+            name: InstanceName::parse("Survival").unwrap(),
+            launch: FabricLaunch {
+                java: PathBuf::from("java"),
+                min_memory_mib: 2048,
+                max_memory_mib: 1024,
+            },
+            fabric: FabricRuntime::new("1.21.8", "0.17.2", "1.1.2").unwrap(),
+        };
+
+        assert!(matches!(
+            config.validate(),
+            Err(InstanceValidationError::InvalidMemoryRange)
+        ));
     }
 }

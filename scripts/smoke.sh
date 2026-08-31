@@ -24,6 +24,8 @@ printf 'PK\003\004smoke fixture' > "$runtime_dir/fabric-server-launch.jar"
     --runtime "$runtime_id" --accept-eula >/dev/null
 "$dart_binary" --home "$smoke_dir" create survival "Survival Server" \
     --runtime "$runtime_id" --accept-eula >/dev/null
+"$dart_binary" --home "$smoke_dir" create creative "Creative Server" \
+    --runtime "$runtime_id" >/dev/null
 
 config_path="$smoke_dir/instances/survival/dart.toml"
 test -f "$config_path"
@@ -35,9 +37,10 @@ grep -q '^installer = "1.1.2"$' "$config_path"
 cmp "$runtime_dir/fabric-server-launch.jar" \
     "$smoke_dir/instances/survival/fabric-server-launch.jar"
 grep -q '^eula=true$' "$smoke_dir/instances/survival/eula.txt"
+test ! -e "$smoke_dir/instances/creative/eula.txt"
 
 runtime_output=$("$dart_binary" --home "$smoke_dir" runtimes list)
-printf '%s\n' "$runtime_output" | grep -q "^$runtime_id[[:space:]]"
+printf '%s\n' "$runtime_output" | grep -Fqx "$runtime_id"
 
 list_output=$("$dart_binary" --home "$smoke_dir" list)
 printf '%s\n' "$list_output" | grep -q '^survival[[:space:]]Survival Server[[:space:]]'

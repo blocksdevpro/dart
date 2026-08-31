@@ -1,3 +1,4 @@
+use crate::paths::DartPaths;
 use serde::{Deserialize, Serialize};
 use std::fmt;
 use std::fs::{self, OpenOptions};
@@ -6,8 +7,6 @@ use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 
 pub const FABRIC_LAUNCHER_FILE: &str = "fabric-server-launch.jar";
-const RUNTIMES_DIRECTORY: &str = "runtimes";
-const FABRIC_DIRECTORY: &str = "fabric";
 const META_BASE_URL: &str = "https://meta.fabricmc.net/";
 static TEMP_SEQUENCE: AtomicU64 = AtomicU64::new(0);
 
@@ -90,18 +89,16 @@ impl fmt::Display for FabricRuntime {
 
 #[derive(Clone, Debug)]
 pub struct RuntimeStore {
-    dart_home: PathBuf,
+    paths: DartPaths,
 }
 
 impl RuntimeStore {
-    pub fn new(dart_home: PathBuf) -> Self {
-        Self { dart_home }
+    pub fn new(paths: DartPaths) -> Self {
+        Self { paths }
     }
 
     pub fn fabric_dir(&self) -> PathBuf {
-        self.dart_home
-            .join(RUNTIMES_DIRECTORY)
-            .join(FABRIC_DIRECTORY)
+        self.paths.fabric_runtimes_dir()
     }
 
     pub fn launcher_path(&self, runtime: &FabricRuntime) -> PathBuf {
@@ -311,16 +308,6 @@ impl FabricClient {
         store.install_bytes(runtime, &bytes)
     }
 
-    pub async fn resolve_and_download(
-        &self,
-        minecraft: Option<&str>,
-        store: &RuntimeStore,
-    ) -> Result<FabricRuntime, RuntimeError> {
-        let runtime = self.resolve(minecraft).await?;
-        self.download(&runtime, store).await?;
-        Ok(runtime)
-    }
-
     async fn get_json<T: serde::de::DeserializeOwned>(
         &self,
         segments: &[&str],
@@ -433,36 +420,14 @@ impl std::error::Error for RuntimeError {
 #[cfg(test)]
 mod tests {
     use super::{FabricRuntime, RuntimeStore};
+    use crate::paths::DartPaths;
+    use crate::test_support::TestDirectory;
     use std::fs;
-    use std::path::PathBuf;
-    use std::sync::atomic::{AtomicU64, Ordering};
-
-    static TEST_SEQUENCE: AtomicU64 = AtomicU64::new(0);
-
-    struct TestDirectory(PathBuf);
-
-    impl TestDirectory {
-        fn new() -> Self {
-            let sequence = TEST_SEQUENCE.fetch_add(1, Ordering::Relaxed);
-            let path = std::env::temp_dir().join(format!(
-                "dart-runtime-test-{}-{sequence}",
-                std::process::id()
-            ));
-            fs::create_dir(&path).unwrap();
-            Self(path)
-        }
-    }
-
-    impl Drop for TestDirectory {
-        fn drop(&mut self) {
-            let _ = fs::remove_dir_all(&self.0);
-        }
-    }
 
     #[test]
     fn stores_and_discovers_multiple_runtime_versions() {
-        let directory = TestDirectory::new();
-        let store = RuntimeStore::new(directory.0.clone());
+        let directory = TestDirectory::new("runtime");
+        let store = RuntimeStore::new(DartPaths::new(directory.path().to_owned()));
         let first = FabricRuntime::new("1.21.8", "0.17.2", "1.1.2").unwrap();
         let second = FabricRuntime::new("1.20.1", "0.16.14", "1.0.3").unwrap();
 
@@ -481,8 +446,8 @@ mod tests {
     #[test]
     fn rejects_path_traversal_versions_and_non_jars() {
         assert!(FabricRuntime::new("../1.21", "loader", "installer").is_err());
-        let directory = TestDirectory::new();
-        let store = RuntimeStore::new(directory.0.clone());
+        let directory = TestDirectory::new("runtime");
+        let store = RuntimeStore::new(DartPaths::new(directory.path().to_owned()));
         let runtime = FabricRuntime::new("1.21.8", "0.17.2", "1.1.2").unwrap();
         assert!(store.install_bytes(&runtime, b"not a jar").is_err());
     }

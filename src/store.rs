@@ -1,6 +1,7 @@
 use crate::instance::{
     EulaAcceptance, Instance, InstanceConfig, InstanceId, InstanceIdError, InstanceValidationError,
 };
+use crate::paths::DartPaths;
 use crate::runtime::FABRIC_LAUNCHER_FILE;
 use std::fmt;
 use std::fs::{self, OpenOptions};
@@ -11,25 +12,24 @@ use std::sync::atomic::{AtomicU64, Ordering};
 
 const CONFIG_FILE: &str = "dart.toml";
 const EULA_FILE: &str = "eula.txt";
-const INSTANCES_DIRECTORY: &str = "instances";
 static TEMP_SEQUENCE: AtomicU64 = AtomicU64::new(0);
 
 #[derive(Clone, Debug)]
 pub struct InstanceStore {
-    dart_home: PathBuf,
+    paths: DartPaths,
 }
 
 impl InstanceStore {
-    pub fn new(dart_home: PathBuf) -> Self {
-        Self { dart_home }
+    pub fn new(paths: DartPaths) -> Self {
+        Self { paths }
     }
 
     pub fn dart_home(&self) -> &Path {
-        &self.dart_home
+        self.paths.home()
     }
 
     pub fn instances_dir(&self) -> PathBuf {
-        self.dart_home.join(INSTANCES_DIRECTORY)
+        self.paths.instances_dir()
     }
 
     pub fn list(&self) -> Result<Vec<Instance>, StoreError> {
@@ -86,10 +86,6 @@ impl InstanceStore {
 
         instances.sort_by(|left, right| left.id().cmp(right.id()));
         Ok(instances)
-    }
-
-    pub fn load(&self, id: &InstanceId) -> Result<Instance, StoreError> {
-        self.load_at(id.clone(), self.instances_dir().join(id.as_str()))
     }
 
     pub fn create(
@@ -149,17 +145,6 @@ impl InstanceStore {
         }
 
         Ok(Instance::new(id, root, config))
-    }
-
-    pub fn save(&self, instance: &Instance) -> Result<(), StoreError> {
-        instance
-            .config()
-            .validate()
-            .map_err(|source| StoreError::InvalidConfig {
-                path: instance.root().join(CONFIG_FILE),
-                source,
-            })?;
-        write_config(&instance.root().join(CONFIG_FILE), instance.config())
     }
 
     fn reconcile_existing(
@@ -477,31 +462,12 @@ impl std::error::Error for StoreError {
 mod tests {
     use super::InstanceStore;
     use crate::instance::{EulaAcceptance, FabricLaunch, InstanceConfig, InstanceId, InstanceName};
+    use crate::paths::DartPaths;
     use crate::runtime::{FABRIC_LAUNCHER_FILE, FabricRuntime};
+    use crate::test_support::TestDirectory;
     use std::fs;
     use std::path::PathBuf;
     use std::str::FromStr;
-    use std::sync::atomic::{AtomicU64, Ordering};
-
-    static TEST_SEQUENCE: AtomicU64 = AtomicU64::new(0);
-
-    struct TestDirectory(PathBuf);
-
-    impl TestDirectory {
-        fn new() -> Self {
-            let sequence = TEST_SEQUENCE.fetch_add(1, Ordering::Relaxed);
-            let path = std::env::temp_dir()
-                .join(format!("dart-store-test-{}-{sequence}", std::process::id()));
-            fs::create_dir(&path).unwrap();
-            Self(path)
-        }
-    }
-
-    impl Drop for TestDirectory {
-        fn drop(&mut self) {
-            let _ = fs::remove_dir_all(&self.0);
-        }
-    }
 
     fn config(name: &str) -> InstanceConfig {
         InstanceConfig::new(
@@ -512,15 +478,15 @@ mod tests {
     }
 
     fn cached_launcher(directory: &TestDirectory) -> PathBuf {
-        let path = directory.0.join("cached.jar");
+        let path = directory.path().join("cached.jar");
         fs::write(&path, b"PK\x03\x04cached launcher").unwrap();
         path
     }
 
     #[test]
     fn creates_and_lists_self_contained_instances() {
-        let directory = TestDirectory::new();
-        let store = InstanceStore::new(directory.0.clone());
+        let directory = TestDirectory::new("store");
+        let store = InstanceStore::new(DartPaths::new(directory.path().to_owned()));
         let id = InstanceId::from_str("survival").unwrap();
         let launcher = cached_launcher(&directory);
 
@@ -542,8 +508,8 @@ mod tests {
 
     #[test]
     fn creating_the_same_instance_twice_converges() {
-        let directory = TestDirectory::new();
-        let store = InstanceStore::new(directory.0.clone());
+        let directory = TestDirectory::new("store");
+        let store = InstanceStore::new(DartPaths::new(directory.path().to_owned()));
         let id = InstanceId::from_str("survival").unwrap();
         let requested = config("Survival");
         let launcher = cached_launcher(&directory);
@@ -566,8 +532,8 @@ mod tests {
 
     #[test]
     fn does_not_adopt_an_unmanaged_directory() {
-        let directory = TestDirectory::new();
-        let store = InstanceStore::new(directory.0.clone());
+        let directory = TestDirectory::new("store");
+        let store = InstanceStore::new(DartPaths::new(directory.path().to_owned()));
         let instance_root = store.instances_dir().join("survival");
         let launcher = cached_launcher(&directory);
         fs::create_dir_all(&instance_root).unwrap();
