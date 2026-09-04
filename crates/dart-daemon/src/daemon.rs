@@ -4,6 +4,7 @@
 //! process supervision, and content management. It provides a clean, cohesive
 //! API surface intended for consumers such as the CLI, TUI, and future API layers.
 
+use crate::content::mods::ModrinthProjectId;
 use crate::content::mods::{ModManager, ModStore, ModrinthClient};
 use crate::content::packs::PackManager;
 use crate::content::{
@@ -251,6 +252,14 @@ impl Daemon {
             .map_err(DaemonError::Instance)
     }
 
+    /// Lists stable Minecraft releases supported by Fabric, newest first.
+    pub async fn list_minecraft_versions(&self) -> Result<Vec<FabricVersion>, DaemonError> {
+        self.instance_service
+            .list_minecraft_versions()
+            .await
+            .map_err(DaemonError::Instance)
+    }
+
     /// Downloads and caches the launcher JAR for the given Fabric runtime.
     pub async fn cache_runtime(&self, runtime: &FabricRuntime) -> Result<(), DaemonError> {
         self.instance_service
@@ -293,6 +302,19 @@ impl Daemon {
     ) -> Result<ContentInstallPlan, DaemonError> {
         self.content
             .prepare_install(hit, minecraft)
+            .await
+            .map_err(DaemonError::Content)
+    }
+
+    /// Prepares an install plan from a Modrinth project identifier.
+    pub async fn prepare_content_install_project(
+        &self,
+        kind: ContentKind,
+        project_id: &ModrinthProjectId,
+        minecraft: &FabricVersion,
+    ) -> Result<ContentInstallPlan, DaemonError> {
+        self.content
+            .prepare_install_project(kind, project_id, minecraft)
             .await
             .map_err(DaemonError::Content)
     }

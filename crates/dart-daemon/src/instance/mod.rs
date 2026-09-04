@@ -42,6 +42,34 @@ impl EulaAcceptance {
 pub struct InstanceId(String);
 
 impl InstanceId {
+    /// Derives a safe base identifier from a human-readable instance name.
+    pub fn from_name(name: &InstanceName) -> Self {
+        let mut slug = String::new();
+        let mut separator_pending = false;
+
+        for character in name.as_str().chars() {
+            if character.is_ascii_alphanumeric() {
+                if separator_pending && !slug.is_empty() && slug.len() < 64 {
+                    slug.push('-');
+                }
+                separator_pending = false;
+                if slug.len() < 64 {
+                    slug.push(character.to_ascii_lowercase());
+                }
+            } else if !slug.is_empty() {
+                separator_pending = true;
+            }
+        }
+
+        while slug.ends_with('-') {
+            slug.pop();
+        }
+        if slug.is_empty() {
+            slug.push_str("server");
+        }
+        Self(slug)
+    }
+
     /// Returns the instance ID as a string slice.
     pub fn as_str(&self) -> &str {
         &self.0
@@ -127,6 +155,11 @@ impl InstanceName {
         Ok(Self(name.to_owned()))
     }
 
+    /// Returns the instance name as a string slice.
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+
     fn validate(&self) -> Result<(), InstanceValidationError> {
         Self::parse(&self.0).map(|_| ())
     }
@@ -171,6 +204,34 @@ impl Default for FabricLaunch {
             java: PathBuf::from("java"),
             min_memory_mib: 1024,
             max_memory_mib: 4096,
+        }
+    }
+}
+
+/// A capacity preset that maps a simple user choice to safe Java memory settings.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub enum InstanceSize {
+    /// A lightweight server for one or two people.
+    Personal,
+    /// A balanced server for a regular group of friends.
+    #[default]
+    Friends,
+    /// A larger server with more room for players and add-ons.
+    Community,
+}
+
+impl InstanceSize {
+    /// Returns the launch configuration represented by this preset.
+    pub fn launch(self) -> FabricLaunch {
+        let (min_memory_mib, max_memory_mib) = match self {
+            Self::Personal => (1024, 2048),
+            Self::Friends => (1024, 4096),
+            Self::Community => (2048, 8192),
+        };
+        FabricLaunch {
+            java: PathBuf::from("java"),
+            min_memory_mib,
+            max_memory_mib,
         }
     }
 }
@@ -348,7 +409,10 @@ impl std::error::Error for InstanceValidationError {}
 
 #[cfg(test)]
 mod tests {
-    use super::{FabricLaunch, InstanceConfig, InstanceId, InstanceName, InstanceValidationError};
+    use super::{
+        FabricLaunch, InstanceConfig, InstanceId, InstanceName, InstanceSize,
+        InstanceValidationError,
+    };
     use crate::runtime::FabricRuntime;
     use std::path::PathBuf;
     use std::str::FromStr;
@@ -359,6 +423,28 @@ mod tests {
             InstanceId::from_str("survival-2026").unwrap().as_str(),
             "survival-2026"
         );
+    }
+
+    #[test]
+    fn derives_safe_instance_ids_from_names() {
+        let name = InstanceName::parse("  My Cozy SMP!  ").unwrap();
+        assert_eq!(InstanceId::from_name(&name).as_str(), "my-cozy-smp");
+
+        let unicode_name = InstanceName::parse("世界").unwrap();
+        assert_eq!(InstanceId::from_name(&unicode_name).as_str(), "server");
+    }
+
+    #[test]
+    fn capacity_presets_have_valid_memory_ranges() {
+        for size in [
+            InstanceSize::Personal,
+            InstanceSize::Friends,
+            InstanceSize::Community,
+        ] {
+            let launch = size.launch();
+            assert!(launch.min_memory_mib > 0);
+            assert!(launch.min_memory_mib <= launch.max_memory_mib);
+        }
     }
 
     #[test]

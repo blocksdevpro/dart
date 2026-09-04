@@ -6,6 +6,7 @@ use super::{
     InstalledPack, ManagedPack, PackError, PackInstallOutcome, PackInstallPlan, PackInstallReport,
     PackKind, PackProject, PackSearchHit,
 };
+use crate::content::mods::ModrinthProjectId;
 use crate::instance::Instance;
 use crate::runtime::FabricVersion;
 
@@ -57,6 +58,17 @@ impl PackManager {
                 .newest_compatible(kind, project, minecraft)
                 .await?,
         })
+    }
+
+    /// Resolves a project ID and prepares its newest compatible install plan.
+    pub async fn prepare_install_project(
+        &self,
+        kind: PackKind,
+        project_id: &ModrinthProjectId,
+        minecraft: &FabricVersion,
+    ) -> Result<PackInstallPlan, PackError> {
+        let project = self.client.project(kind, project_id).await?;
+        self.prepare_install(kind, project, minecraft).await
     }
 
     /// Applies a pack installation plan to the instance.

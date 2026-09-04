@@ -1,7 +1,7 @@
 use dart_client::DartClient;
 use dart_daemon::{Daemon, DartPaths, FabricRuntime};
-use dart_protocol::instance::CreateInstanceRequest;
-use dart_server::{build_router, AppState};
+use dart_protocol::instance::{CreateInstanceRequest, InstanceSizeDto};
+use dart_server::{AppState, build_router};
 use std::env;
 use std::fs;
 use std::path::PathBuf;
@@ -75,36 +75,33 @@ async fn client_communicates_over_unix_domain_socket() {
 
     // 3. Create instance
     let req = CreateInstanceRequest {
-        id: "vanilla".to_owned(),
         name: "Vanilla Server".to_owned(),
         minecraft: Some("1.21.4".to_owned()),
         loader: Some("0.16.10".to_owned()),
         installer: Some("1.0.1".to_owned()),
         accept_eula: true,
-        min_memory_mib: Some(1024),
-        max_memory_mib: Some(2048),
-        java: None,
+        size: InstanceSizeDto::Personal,
     };
     let created = client.create_instance(&req).await.unwrap();
-    assert_eq!(created.id, "vanilla");
+    assert_eq!(created.id, "vanilla-server");
     assert_eq!(created.name, "Vanilla Server");
 
     // 4. List instances
     let list = client.list_instances().await.unwrap();
     assert_eq!(list.len(), 1);
-    assert_eq!(list[0].id, "vanilla");
+    assert_eq!(list[0].id, "vanilla-server");
 
     // 5. Get instance
-    let fetched = client.get_instance("vanilla").await.unwrap();
-    assert_eq!(fetched.id, "vanilla");
+    let fetched = client.get_instance("vanilla-server").await.unwrap();
+    assert_eq!(fetched.id, "vanilla-server");
 
     // 6. Get state
-    let state = client.get_state("vanilla").await.unwrap();
+    let state = client.get_state("vanilla-server").await.unwrap();
     assert_eq!(state, dart_protocol::instance::InstanceStateDto::Stopped);
 
     // 7. Interactive WebSocket console attach
     let mut console = client
-        .attach_console_unix(&socket_path, "vanilla")
+        .attach_console_unix(&socket_path, "vanilla-server")
         .await
         .unwrap();
 

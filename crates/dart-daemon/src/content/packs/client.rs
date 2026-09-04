@@ -2,9 +2,10 @@
 
 use super::{
     MAX_PACK_FILE_BYTES, MAX_SEARCH_QUERY_LENGTH, MODRINTH_API_URL, PackError, PackKind,
-    PackProject, PackRelease, PackSearchHit, SearchResponse, VersionResponse,
+    PackProject, PackRelease, PackSearchHit, ProjectResponse, SearchResponse, VersionResponse,
     channel_name_priority,
 };
+use crate::content::mods::ModrinthProjectId;
 use crate::runtime::FabricVersion;
 
 /// HTTP client for querying and downloading Modrinth data packs and resource packs.
@@ -109,6 +110,24 @@ impl PackClient {
                 project: project.title,
                 minecraft: minecraft.to_string(),
             })
+    }
+
+    pub(super) async fn project(
+        &self,
+        kind: PackKind,
+        project_id: &ModrinthProjectId,
+    ) -> Result<PackProject, PackError> {
+        let response: ProjectResponse = self
+            .get_json(self.endpoint(&["project", project_id.as_str()])?)
+            .await?;
+        let project = response.into_project(kind)?;
+        if project.id != *project_id {
+            return Err(PackError::InvalidMetadata(format!(
+                "Modrinth returned project {} for requested project {project_id}",
+                project.id
+            )));
+        }
+        Ok(project)
     }
 
     pub(super) async fn download(&self, release: &PackRelease) -> Result<Vec<u8>, PackError> {

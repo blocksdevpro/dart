@@ -1,5 +1,6 @@
 //! Application service unifying mods, data packs, and resource packs.
 
+use super::mods::ModrinthProjectId;
 use super::mods::{ModInstallOutcome, ModManager};
 use super::packs::{PackInstallOutcome, PackInstallPlan, PackKind, PackManager};
 use super::{
@@ -102,6 +103,32 @@ impl ContentManager {
             ContentSearchHit::ResourcePack(hit) => Ok(ContentInstallPlan::ResourcePack(Box::new(
                 self.packs
                     .prepare_install(PackKind::ResourcePack, hit.project().clone(), minecraft)
+                    .await?,
+            ))),
+        }
+    }
+
+    /// Prepares an installation plan from a Modrinth project identifier.
+    pub async fn prepare_install_project(
+        &self,
+        kind: ContentKind,
+        project_id: &ModrinthProjectId,
+        minecraft: &FabricVersion,
+    ) -> Result<ContentInstallPlan, ContentError> {
+        match kind {
+            ContentKind::Mod => Ok(ContentInstallPlan::Mod(
+                self.mods
+                    .prepare_install_project(project_id, minecraft)
+                    .await?,
+            )),
+            ContentKind::DataPack => Ok(ContentInstallPlan::DataPack(Box::new(
+                self.packs
+                    .prepare_install_project(PackKind::DataPack, project_id, minecraft)
+                    .await?,
+            ))),
+            ContentKind::ResourcePack => Ok(ContentInstallPlan::ResourcePack(Box::new(
+                self.packs
+                    .prepare_install_project(PackKind::ResourcePack, project_id, minecraft)
                     .await?,
             ))),
         }

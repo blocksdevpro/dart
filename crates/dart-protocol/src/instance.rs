@@ -78,8 +78,6 @@ pub struct InstanceDto {
 /// Parameters for creating a new server instance.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct CreateInstanceRequest {
-    /// Unique instance identifier.
-    pub id: String,
     /// Human-friendly display name.
     pub name: String,
     /// Target Minecraft version (e.g. `1.21.4`). Defaults to latest stable if omitted.
@@ -94,15 +92,57 @@ pub struct CreateInstanceRequest {
     /// Whether the Minecraft EULA has been accepted by the user.
     #[serde(default)]
     pub accept_eula: bool,
-    /// Minimum allocated heap memory in megabytes (optional, defaults to 1024).
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub min_memory_mib: Option<u32>,
-    /// Maximum allocated heap memory in megabytes (optional, defaults to 4096).
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub max_memory_mib: Option<u32>,
-    /// Java executable path (optional, defaults to "java").
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub java: Option<String>,
+    /// Friendly capacity preset. Defaults to a small group server.
+    #[serde(default)]
+    pub size: InstanceSizeDto,
+}
+
+/// A user-facing server capacity preset.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum InstanceSizeDto {
+    /// A lightweight server for one or two people.
+    Personal,
+    /// A balanced server for a regular group of friends.
+    #[default]
+    Friends,
+    /// A larger server with more room for players and add-ons.
+    Community,
+}
+
+/// A Minecraft version shown in the create-server flow.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct MinecraftVersionOptionDto {
+    /// Version identifier sent back when creating the server.
+    pub value: String,
+    /// Human-readable option label.
+    pub label: String,
+    /// Whether this is the recommended default.
+    pub recommended: bool,
+}
+
+/// A capacity preset shown in the create-server flow.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct InstanceSizeOptionDto {
+    /// Preset identifier sent back when creating the server.
+    pub value: InstanceSizeDto,
+    /// Human-readable name.
+    pub label: String,
+    /// Short explanation of who the preset is for.
+    pub description: String,
+    /// Maximum memory allocated by this preset.
+    pub memory_mib: u32,
+    /// Whether this is the recommended default.
+    pub recommended: bool,
+}
+
+/// Choices needed to create a server without entering implementation details.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct CreateInstanceOptionsResponse {
+    /// Stable Minecraft releases, newest first.
+    pub minecraft_versions: Vec<MinecraftVersionOptionDto>,
+    /// Supported server capacity presets.
+    pub sizes: Vec<InstanceSizeOptionDto>,
 }
 
 /// Request to update an existing instance's settings.
@@ -139,15 +179,12 @@ mod tests {
     #[test]
     fn serializes_create_instance_request() {
         let req = CreateInstanceRequest {
-            id: "survival".to_owned(),
             name: "Survival SMP".to_owned(),
             minecraft: Some("1.21.4".to_owned()),
             loader: None,
             installer: None,
             accept_eula: true,
-            min_memory_mib: Some(2048),
-            max_memory_mib: Some(6144),
-            java: None,
+            size: InstanceSizeDto::Community,
         };
         let json = serde_json::to_string(&req).unwrap();
         let decoded: CreateInstanceRequest = serde_json::from_str(&json).unwrap();

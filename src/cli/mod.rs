@@ -10,10 +10,11 @@ mod remote_supervisor;
 use daemon::ensure_daemon;
 use dart_client::DartClient;
 use dart_daemon::{
-    Daemon, DartPaths, EulaAcceptance, FabricRuntime, FabricVersion, InstanceId,
-    InstanceName,
+    Daemon, DartPaths, EulaAcceptance, FabricRuntime, FabricVersion, InstanceId, InstanceName,
 };
-use dart_protocol::instance::{CreateInstanceRequest, InstanceDto, InstanceStateDto};
+use dart_protocol::instance::{
+    CreateInstanceRequest, InstanceDto, InstanceSizeDto, InstanceStateDto,
+};
 use dart_protocol::runtime::DownloadRuntimeRequest;
 use remote_supervisor::spawn_remote_supervisor;
 use std::env;
@@ -29,7 +30,7 @@ dart [--home <directory>]                           Open the TUI\n  \
 dart [--home <directory>] status                    Show daemon status and health\n  \
 dart [--home <directory>] daemon [status|start|stop] Control the background daemon\n  \
 dart [--home <directory>] list                      List instances\n  \
-dart [--home <directory>] create <id> <name...>\n  \
+dart [--home <directory>] create <name...>\n  \
      [--minecraft <version> | --runtime <mc/loader/installer>] [--accept-eula]\n  \
 dart [--home <directory>] start <id>                Start an instance\n  \
 dart [--home <directory>] stop <id>                 Stop an instance\n  \
@@ -71,7 +72,6 @@ enum DaemonCommand {
 
 #[derive(Debug, Eq, PartialEq)]
 struct CreateCommand {
-    id: InstanceId,
     name: InstanceName,
     runtime: CreateRuntime,
     eula: EulaAcceptance,
@@ -166,10 +166,7 @@ pub async fn run(arguments: impl IntoIterator<Item = OsString>) -> Result<(), Bo
 async fn print_instances(client: &DartClient, paths: &DartPaths) -> Result<(), Box<dyn Error>> {
     let instances: Vec<InstanceDto> = client.list_instances().await?;
     if instances.is_empty() {
-        println!(
-            "No instances in {}",
-            paths.instances_dir().display()
-        );
+        println!("No instances in {}", paths.instances_dir().display());
         return Ok(());
     }
 
@@ -193,7 +190,10 @@ async fn print_instances(client: &DartClient, paths: &DartPaths) -> Result<(), B
     Ok(())
 }
 
-async fn create_instance(client: &DartClient, command: CreateCommand) -> Result<(), Box<dyn Error>> {
+async fn create_instance(
+    client: &DartClient,
+    command: CreateCommand,
+) -> Result<(), Box<dyn Error>> {
     let (mc, loader, installer) = match command.runtime {
         CreateRuntime::Latest => (None, None, None),
         CreateRuntime::Minecraft(version) => (Some(version.to_string()), None, None),
@@ -205,15 +205,12 @@ async fn create_instance(client: &DartClient, command: CreateCommand) -> Result<
     };
 
     let req = CreateInstanceRequest {
-        id: command.id.to_string(),
         name: command.name.to_string(),
         minecraft: mc,
         loader,
         installer,
         accept_eula: command.eula.is_accepted(),
-        min_memory_mib: None,
-        max_memory_mib: None,
-        java: None,
+        size: InstanceSizeDto::Friends,
     };
 
     let instance = client.create_instance(&req).await?;
@@ -225,9 +222,7 @@ async fn create_instance(client: &DartClient, command: CreateCommand) -> Result<
     );
     println!(
         "Instance '{}' is ready at {} with {}",
-        instance.id,
-        instance.root,
-        label
+        instance.id, instance.root, label
     );
     Ok(())
 }
@@ -398,20 +393,19 @@ fn parse_home(arguments: Vec<String>) -> Result<(Option<PathBuf>, Vec<String>), 
 }
 
 fn parse_create(arguments: &[String]) -> Result<CreateCommand, CliError> {
-    if arguments.len() < 2 {
+    if arguments.is_empty() {
         return Err(CliError::Usage(
-            "dart create <id> <name...> [--minecraft <version> | --runtime <mc/loader/installer>] [--accept-eula]",
+            "dart create <name...> [--minecraft <version> | --runtime <mc/loader/installer>] [--accept-eula]",
         ));
     }
-    let id = InstanceId::from_str(&arguments[0]).map_err(CliError::InvalidInstanceId)?;
     let option_start = arguments
         .iter()
         .position(|argument| argument.starts_with("--"))
         .unwrap_or(arguments.len());
-    if option_start == 1 {
+    if option_start == 0 {
         return Err(CliError::EmptyInstanceName);
     }
-    let name = InstanceName::parse(arguments[1..option_start].join(" "))
+    let name = InstanceName::parse(arguments[..option_start].join(" "))
         .map_err(CliError::InvalidInstanceName)?;
 
     let mut minecraft = None;
@@ -452,7 +446,6 @@ fn parse_create(arguments: &[String]) -> Result<CreateCommand, CliError> {
         (Some(_), Some(_)) => unreachable!("conflict returns above"),
     };
     Ok(CreateCommand {
-        id,
         name,
         runtime,
         eula,
@@ -582,7 +575,6 @@ mod tests {
             "--home",
             "data",
             "create",
-            "survival",
             "Survival Server",
             "--runtime",
             "1.21.8/0.17.2/1.1.2",
@@ -594,7 +586,6 @@ mod tests {
         let Command::Create(command) = cli.command else {
             panic!("expected create command");
         };
-        assert_eq!(command.id.as_str(), "survival");
         assert_eq!(command.name.to_string(), "Survival Server");
         assert_eq!(command.eula, crate::daemon::EulaAcceptance::Accepted);
         assert!(matches!(command.runtime, CreateRuntime::Exact(_)));
@@ -604,7 +595,6 @@ mod tests {
     fn rejects_conflicting_create_runtime_options() {
         let error = parse(arguments(&[
             "create",
-            "survival",
             "Survival",
             "--minecraft",
             "1.21.8",

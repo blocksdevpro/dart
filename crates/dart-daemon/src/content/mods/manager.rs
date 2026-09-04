@@ -147,6 +147,16 @@ impl ModManager {
         })
     }
 
+    /// Resolves a project ID and prepares its newest compatible install plan.
+    pub async fn prepare_install_project(
+        &self,
+        project_id: &ModrinthProjectId,
+        minecraft: &FabricVersion,
+    ) -> Result<ModInstallPlan, ModError> {
+        let project = self.client.project(project_id).await?;
+        self.prepare_install(project, minecraft).await
+    }
+
     /// Downloads and installs all releases in the install plan in topological order.
     pub async fn apply_plan(
         &self,

@@ -1,9 +1,10 @@
 //! Instance management workflows and lifecycle orchestration.
 
 use super::{InstanceStore, StoreError};
-use crate::instance::{EulaAcceptance, Instance, InstanceId, InstanceName};
+use crate::instance::{EulaAcceptance, FabricLaunch, Instance, InstanceId, InstanceName};
 use crate::runtime::{FabricClient, FabricRuntime, FabricVersion, RuntimeError, RuntimeStore};
 use std::fmt;
+use std::sync::{Arc, Mutex};
 
 /// A request specifying which Fabric runtime version to use when creating an instance.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -19,30 +20,31 @@ pub enum RuntimeRequest {
 /// Parameters for creating a new server instance.
 #[derive(Clone, Debug)]
 pub struct CreateInstance {
-    /// Unique identifier for the instance.
-    pub id: InstanceId,
     /// Display name for the instance.
     pub name: InstanceName,
     /// Runtime version request.
     pub runtime: RuntimeRequest,
     /// EULA acceptance status.
     pub eula: EulaAcceptance,
+    /// Java launch configuration.
+    pub launch: FabricLaunch,
 }
 
 impl CreateInstance {
     /// Creates a new instance creation request.
-    pub fn new(
-        id: InstanceId,
-        name: InstanceName,
-        runtime: RuntimeRequest,
-        eula: EulaAcceptance,
-    ) -> Self {
+    pub fn new(name: InstanceName, runtime: RuntimeRequest, eula: EulaAcceptance) -> Self {
         Self {
-            id,
             name,
             runtime,
             eula,
+            launch: FabricLaunch::default(),
         }
+    }
+
+    /// Applies an explicit Java launch configuration.
+    pub fn with_launch(mut self, launch: FabricLaunch) -> Self {
+        self.launch = launch;
+        self
     }
 }
 
@@ -52,6 +54,7 @@ pub struct InstanceService {
     instances: InstanceStore,
     runtimes: RuntimeStore,
     fabric: FabricClient,
+    creation_lock: Arc<Mutex<()>>,
 }
 
 impl InstanceService {
@@ -61,6 +64,7 @@ impl InstanceService {
             instances,
             runtimes,
             fabric,
+            creation_lock: Arc::new(Mutex::new(())),
         }
     }
 
@@ -105,6 +109,14 @@ impl InstanceService {
             .map_err(ServiceError::Runtime)
     }
 
+    /// Lists stable Minecraft versions supported by Fabric, newest first.
+    pub async fn list_minecraft_versions(&self) -> Result<Vec<FabricVersion>, ServiceError> {
+        self.fabric
+            .minecraft_versions()
+            .await
+            .map_err(ServiceError::Runtime)
+    }
+
     /// Caches a launcher JAR for already validated Fabric coordinates.
     pub async fn cache_runtime(&self, runtime: &FabricRuntime) -> Result<(), ServiceError> {
         self.fabric
@@ -117,7 +129,18 @@ impl InstanceService {
     /// Resolves/caches the requested runtime and creates the instance.
     pub async fn create(&self, request: CreateInstance) -> Result<Instance, ServiceError> {
         let runtime = self.runtime_for(request.runtime).await?;
-        self.create_with_cached_runtime(request.id, request.name, runtime, request.eula)
+        let _creation_guard = self
+            .creation_lock
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let id = self.instances.available_id(&request.name);
+        self.create_with_cached_runtime_and_launch(
+            id,
+            request.name,
+            request.launch,
+            runtime,
+            request.eula,
+        )
     }
 
     /// Creates an instance using an already cached runtime launcher.
@@ -128,11 +151,19 @@ impl InstanceService {
         runtime: FabricRuntime,
         eula: EulaAcceptance,
     ) -> Result<Instance, ServiceError> {
-        let config = crate::instance::InstanceConfig::new(
-            name,
-            crate::instance::FabricLaunch::default(),
-            runtime.clone(),
-        );
+        self.create_with_cached_runtime_and_launch(id, name, FabricLaunch::default(), runtime, eula)
+    }
+
+    /// Creates an instance using an already cached runtime and launch configuration.
+    pub fn create_with_cached_runtime_and_launch(
+        &self,
+        id: InstanceId,
+        name: InstanceName,
+        launch: FabricLaunch,
+        runtime: FabricRuntime,
+        eula: EulaAcceptance,
+    ) -> Result<Instance, ServiceError> {
+        let config = crate::instance::InstanceConfig::new(name, launch, runtime.clone());
         self.instances
             .create(id, config, &self.runtimes.launcher_path(&runtime), eula)
             .map_err(ServiceError::Store)
@@ -281,7 +312,6 @@ mod tests {
 
         let instance = service
             .create(CreateInstance::new(
-                InstanceId::from_str("survival").unwrap(),
                 InstanceName::parse("Survival").unwrap(),
                 RuntimeRequest::Exact(runtime.clone()),
                 EulaAcceptance::NotAccepted,
@@ -290,6 +320,17 @@ mod tests {
             .unwrap();
 
         assert_eq!(instance.config().fabric, runtime);
+        assert_eq!(instance.id().as_str(), "survival");
         assert!(!instance.root().join("eula.txt").exists());
+
+        let duplicate_name = service
+            .create(CreateInstance::new(
+                InstanceName::parse("Survival").unwrap(),
+                RuntimeRequest::Exact(runtime),
+                EulaAcceptance::NotAccepted,
+            ))
+            .await
+            .unwrap();
+        assert_eq!(duplicate_name.id().as_str(), "survival-2");
     }
 }

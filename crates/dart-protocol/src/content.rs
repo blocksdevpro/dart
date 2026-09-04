@@ -30,6 +30,8 @@ impl ContentKindDto {
 pub struct InstalledContentDto {
     /// Content kind (`mod`, `data_pack`, `resource_pack`).
     pub kind: ContentKindDto,
+    /// Stable key to use for update or removal operations.
+    pub key: String,
     /// Filename on disk (e.g. `fabric-api-0.92.0.jar`).
     pub file_name: String,
     /// Display name or mod ID.
@@ -66,6 +68,36 @@ pub struct ContentSearchHitDto {
     pub kind: ContentKindDto,
 }
 
+/// Request to install the newest compatible release of a Modrinth project.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct InstallContentRequest {
+    /// Type of add-on being installed.
+    pub kind: ContentKindDto,
+    /// Modrinth project identifier returned by search.
+    pub project_id: String,
+}
+
+/// Request to remove content that Dart already manages.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct RemoveContentRequest {
+    /// Type of add-on being removed.
+    pub kind: ContentKindDto,
+    /// Stable selection key returned by the installed-content endpoint.
+    pub key: String,
+}
+
+/// Result of installing or updating an add-on.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ContentInstallOutcomeDto {
+    /// The add-on was newly installed.
+    Added,
+    /// An older managed release was replaced.
+    Updated,
+    /// The newest compatible release was already installed.
+    AlreadyInstalled,
+}
+
 /// Resolved plan for installing or updating content.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct ContentInstallPlanDto {
@@ -88,10 +120,17 @@ pub struct ContentInstallPlanDto {
 /// Outcome report returned after applying a content plan.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct ContentInstallReportDto {
-    /// List of file names installed or updated.
-    pub installed_files: Vec<String>,
-    /// Summary message.
-    pub message: String,
+    /// Type of add-on that was installed.
+    pub kind: ContentKindDto,
+    /// Human-readable project name.
+    pub title: String,
+    /// Installed project version.
+    pub version: String,
+    /// Whether the operation added, updated, or kept the current release.
+    pub outcome: ContentInstallOutcomeDto,
+    /// Required dependencies included in the plan.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub dependencies: Vec<String>,
 }
 
 #[cfg(test)]
@@ -102,6 +141,7 @@ mod tests {
     fn serializes_installed_content() {
         let item = InstalledContentDto {
             kind: ContentKindDto::Mod,
+            key: "sodium-fabric-0.5.8.jar".to_owned(),
             file_name: "sodium-fabric-0.5.8.jar".to_owned(),
             name: "Sodium".to_owned(),
             version: Some("0.5.8".to_owned()),

@@ -38,6 +38,28 @@ impl InstanceStore {
         self.paths.instances_dir()
     }
 
+    /// Derives an unused instance ID from a display name.
+    pub fn available_id(&self, name: &crate::instance::InstanceName) -> InstanceId {
+        let base = InstanceId::from_name(name);
+        if !self.instances_dir().join(base.as_str()).exists() {
+            return base;
+        }
+
+        for number in 2_u64.. {
+            let suffix = format!("-{number}");
+            let maximum_base_length = 64 - suffix.len();
+            let shortened =
+                base.as_str()[..base.as_str().len().min(maximum_base_length)].trim_end_matches('-');
+            let candidate = InstanceId::from_str(&format!("{shortened}{suffix}"))
+                .expect("a generated instance ID is always valid");
+            if !self.instances_dir().join(candidate.as_str()).exists() {
+                return candidate;
+            }
+        }
+
+        unreachable!("the instance ID suffix space cannot be exhausted")
+    }
+
     /// Discovers and loads all valid managed instances in the instances directory.
     pub fn list(&self) -> Result<Vec<Instance>, StoreError> {
         let instances_dir = self.instances_dir();
@@ -578,6 +600,28 @@ mod tests {
 
         assert_eq!(first, second);
         assert!(!first.root().join("eula.txt").exists());
+    }
+
+    #[test]
+    fn generates_a_unique_id_without_asking_the_caller() {
+        let directory = TestDirectory::new("generated-id");
+        let store = InstanceStore::new(DartPaths::new(directory.path().to_owned()));
+        let launcher = cached_launcher(&directory);
+        let name = InstanceName::parse("Friends World").unwrap();
+
+        let first_id = store.available_id(&name);
+        store
+            .create(
+                first_id.clone(),
+                config("Friends World"),
+                &launcher,
+                EulaAcceptance::NotAccepted,
+            )
+            .unwrap();
+        let second_id = store.available_id(&name);
+
+        assert_eq!(first_id.as_str(), "friends-world");
+        assert_eq!(second_id.as_str(), "friends-world-2");
     }
 
     #[test]

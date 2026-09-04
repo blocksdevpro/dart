@@ -1,7 +1,9 @@
 use dart_daemon::{Daemon, DartPaths, FabricRuntime};
-use dart_protocol::instance::{CreateInstanceRequest, InstanceDto, InstanceStateDto};
+use dart_protocol::instance::{
+    CreateInstanceRequest, InstanceDto, InstanceSizeDto, InstanceStateDto,
+};
 use dart_protocol::system::{HealthResponse, SystemInfoResponse};
-use dart_server::{build_router, AppState};
+use dart_server::{AppState, build_router};
 use std::env;
 use std::fs;
 use std::path::PathBuf;
@@ -84,15 +86,12 @@ async fn http_endpoints_over_tcp() {
 
     // 3. Create instance
     let create_req = CreateInstanceRequest {
-        id: "survival".to_owned(),
         name: "Survival SMP".to_owned(),
         minecraft: Some("1.21.4".to_owned()),
         loader: Some("0.16.10".to_owned()),
         installer: Some("1.0.1".to_owned()),
         accept_eula: true,
-        min_memory_mib: None,
-        max_memory_mib: None,
-        java: None,
+        size: InstanceSizeDto::Friends,
     };
 
     let created: InstanceDto = client
@@ -104,8 +103,9 @@ async fn http_endpoints_over_tcp() {
         .json()
         .await
         .unwrap();
-    assert_eq!(created.id, "survival");
+    assert_eq!(created.id, "survival-smp");
     assert_eq!(created.name, "Survival SMP");
+    assert_eq!(created.config.launch.max_memory_mib, 4096);
     assert_eq!(created.state, InstanceStateDto::Stopped);
 
     // 4. List instances
@@ -118,11 +118,11 @@ async fn http_endpoints_over_tcp() {
         .await
         .unwrap();
     assert_eq!(list.len(), 1);
-    assert_eq!(list[0].id, "survival");
+    assert_eq!(list[0].id, "survival-smp");
 
     // 5. Get instance state
     let state_dto: InstanceStateDto = client
-        .get(format!("{base_url}/api/v1/instances/survival/state"))
+        .get(format!("{base_url}/api/v1/instances/survival-smp/state"))
         .send()
         .await
         .unwrap()

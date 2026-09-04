@@ -51,6 +51,16 @@ impl FabricClient {
         })
     }
 
+    /// Lists stable Minecraft releases supported by Fabric, newest first.
+    pub async fn minecraft_versions(&self) -> Result<Vec<FabricVersion>, RuntimeError> {
+        let entries: Vec<VersionEntry> = self.get_json(&["v2", "versions", "game"]).await?;
+        entries
+            .into_iter()
+            .filter(|entry| entry.stable)
+            .map(|entry| FabricVersion::parse(entry.version))
+            .collect()
+    }
+
     /// Downloads the server launcher JAR for the given runtime into the store cache.
     pub async fn download(
         &self,

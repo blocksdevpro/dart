@@ -362,6 +362,38 @@ struct SearchHitResponse {
     downloads: u64,
 }
 
+#[derive(Debug, Deserialize)]
+struct ProjectResponse {
+    id: String,
+    slug: Option<String>,
+    title: String,
+    project_type: String,
+    status: String,
+}
+
+impl ProjectResponse {
+    fn into_project(self, kind: PackKind) -> Result<PackProject, PackError> {
+        if self.project_type != kind.project_type() {
+            return Err(PackError::InvalidMetadata(format!(
+                "Modrinth project '{}' is not a {}",
+                self.id,
+                kind.label().to_ascii_lowercase()
+            )));
+        }
+        if !matches!(self.status.as_str(), "approved" | "archived" | "unlisted") {
+            return Err(PackError::InvalidMetadata(format!(
+                "Modrinth project '{}' is not installable",
+                self.id
+            )));
+        }
+        Ok(PackProject {
+            id: parse_project_id(self.id)?,
+            slug: self.slug.filter(|slug| !slug.trim().is_empty()),
+            title: validate_text(self.title, "Modrinth project title", 120)?,
+        })
+    }
+}
+
 impl TryFrom<SearchHitResponse> for PackSearchHit {
     type Error = PackError;
 

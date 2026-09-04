@@ -28,7 +28,7 @@ pub use daemon::Daemon;
 pub use error::DaemonError;
 pub use instance::{
     CreateInstance, EulaAcceptance, FabricLaunch, Instance, InstanceConfig, InstanceId,
-    InstanceIdError, InstanceName, InstanceService, InstanceState, InstanceStore,
+    InstanceIdError, InstanceName, InstanceService, InstanceSize, InstanceState, InstanceStore,
     InstanceValidationError, RuntimeRequest,
 };
 pub use process::{

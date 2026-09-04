@@ -18,14 +18,15 @@ pub use console::{
     OutputStreamDto,
 };
 pub use content::{
-    ContentInstallPlanDto, ContentInstallReportDto, ContentKindDto, ContentSearchHitDto,
-    InstalledContentDto,
+    ContentInstallOutcomeDto, ContentInstallPlanDto, ContentInstallReportDto, ContentKindDto,
+    ContentSearchHitDto, InstallContentRequest, InstalledContentDto, RemoveContentRequest,
 };
 pub use error::{ApiErrorDetail, ApiErrorResponse, codes as error_codes};
 pub use event::DaemonEvent;
 pub use instance::{
-    CreateInstanceRequest, FabricLaunchDto, InstanceConfigDto, InstanceDto, InstanceStateDto,
-    UpdateInstanceRequest,
+    CreateInstanceOptionsResponse, CreateInstanceRequest, FabricLaunchDto, InstanceConfigDto,
+    InstanceDto, InstanceSizeDto, InstanceSizeOptionDto, InstanceStateDto,
+    MinecraftVersionOptionDto, UpdateInstanceRequest,
 };
 pub use runtime::{DownloadRuntimeRequest, FabricRuntimeDto, ResolveRuntimeResponse};
 pub use system::{HealthResponse, SystemInfoResponse};

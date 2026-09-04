@@ -2,15 +2,42 @@
 
 use crate::error::ServerError;
 use crate::state::AppState;
+use axum::Json;
 use axum::extract::{Path, State};
 use axum::http::StatusCode;
-use axum::Json;
 use dart_daemon::{
     CreateInstance, EulaAcceptance, FabricRuntime, FabricVersion, InstanceId, InstanceName,
-    RuntimeRequest,
+    InstanceSize, RuntimeRequest,
 };
-use dart_protocol::instance::{CreateInstanceRequest, InstanceDto, InstanceStateDto};
+use dart_protocol::instance::{
+    CreateInstanceOptionsResponse, CreateInstanceRequest, InstanceDto, InstanceSizeDto,
+    InstanceSizeOptionDto, InstanceStateDto, MinecraftVersionOptionDto,
+};
 use std::str::FromStr;
+
+fn map_size_dto(size: InstanceSizeDto) -> InstanceSize {
+    match size {
+        InstanceSizeDto::Personal => InstanceSize::Personal,
+        InstanceSizeDto::Friends => InstanceSize::Friends,
+        InstanceSizeDto::Community => InstanceSize::Community,
+    }
+}
+
+fn size_option(
+    value: InstanceSizeDto,
+    label: &str,
+    description: &str,
+    recommended: bool,
+) -> InstanceSizeOptionDto {
+    let memory_mib = map_size_dto(value).launch().max_memory_mib;
+    InstanceSizeOptionDto {
+        value,
+        label: label.to_owned(),
+        description: description.to_owned(),
+        memory_mib,
+        recommended,
+    }
+}
 
 /// Handler for `GET /api/v1/instances`.
 pub async fn list_instances(
@@ -28,21 +55,68 @@ pub async fn list_instances(
     Ok(Json(dtos))
 }
 
+/// Handler for `GET /api/v1/instances/options`.
+pub async fn create_instance_options(
+    State(state): State<AppState>,
+) -> Result<Json<CreateInstanceOptionsResponse>, ServerError> {
+    let versions = state
+        .daemon()
+        .list_minecraft_versions()
+        .await
+        .map_err(ServerError::from)?;
+    let minecraft_versions = versions
+        .into_iter()
+        .take(24)
+        .enumerate()
+        .map(|(index, version)| MinecraftVersionOptionDto {
+            value: version.to_string(),
+            label: format!("Minecraft {version}"),
+            recommended: index == 0,
+        })
+        .collect();
+
+    Ok(Json(CreateInstanceOptionsResponse {
+        minecraft_versions,
+        sizes: vec![
+            size_option(
+                InstanceSizeDto::Personal,
+                "Personal",
+                "A simple world for one or two people.",
+                false,
+            ),
+            size_option(
+                InstanceSizeDto::Friends,
+                "Friends",
+                "A balanced server for a regular group.",
+                true,
+            ),
+            size_option(
+                InstanceSizeDto::Community,
+                "Community",
+                "More room for players and add-ons.",
+                false,
+            ),
+        ],
+    }))
+}
+
 /// Handler for `POST /api/v1/instances`.
 pub async fn create_instance(
     State(state): State<AppState>,
     Json(request): Json<CreateInstanceRequest>,
 ) -> Result<(StatusCode, Json<InstanceDto>), ServerError> {
-    let id = InstanceId::from_str(&request.id).map_err(|e| ServerError::BadRequest(e.to_string()))?;
-    let name = InstanceName::parse(&request.name).map_err(|e| ServerError::BadRequest(e.to_string()))?;
+    let name =
+        InstanceName::parse(&request.name).map_err(|e| ServerError::BadRequest(e.to_string()))?;
 
     let runtime = match (&request.minecraft, &request.loader, &request.installer) {
         (Some(mc), Some(ldr), Some(inst)) => {
-            let rt = FabricRuntime::new(mc, ldr, inst).map_err(|e| ServerError::BadRequest(e.to_string()))?;
+            let rt = FabricRuntime::new(mc, ldr, inst)
+                .map_err(|e| ServerError::BadRequest(e.to_string()))?;
             RuntimeRequest::Exact(rt)
         }
         (Some(mc), _, _) => {
-            let ver = FabricVersion::parse(mc).map_err(|e| ServerError::BadRequest(e.to_string()))?;
+            let ver =
+                FabricVersion::parse(mc).map_err(|e| ServerError::BadRequest(e.to_string()))?;
             RuntimeRequest::Minecraft(ver)
         }
         _ => RuntimeRequest::Latest,
@@ -54,9 +128,14 @@ pub async fn create_instance(
         EulaAcceptance::NotAccepted
     };
 
-    let cmd = CreateInstance::new(id.clone(), name, runtime, eula);
-    let instance = state.daemon().create_instance(cmd).await.map_err(ServerError::from)?;
-    let live_state = state.daemon().instance_state(&id);
+    let size = map_size_dto(request.size);
+    let cmd = CreateInstance::new(name, runtime, eula).with_launch(size.launch());
+    let instance = state
+        .daemon()
+        .create_instance(cmd)
+        .await
+        .map_err(ServerError::from)?;
+    let live_state = state.daemon().instance_state(instance.id());
 
     Ok((StatusCode::CREATED, Json(instance.to_dto(&live_state))))
 }
@@ -67,7 +146,10 @@ pub async fn get_instance(
     Path(id_str): Path<String>,
 ) -> Result<Json<InstanceDto>, ServerError> {
     let id = InstanceId::from_str(&id_str).map_err(|e| ServerError::BadRequest(e.to_string()))?;
-    let instance = state.daemon().get_instance(&id).map_err(ServerError::from)?;
+    let instance = state
+        .daemon()
+        .get_instance(&id)
+        .map_err(ServerError::from)?;
     let live_state = state.daemon().instance_state(&id);
     Ok(Json(instance.to_dto(&live_state)))
 }
@@ -78,7 +160,11 @@ pub async fn start_instance(
     Path(id_str): Path<String>,
 ) -> Result<StatusCode, ServerError> {
     let id = InstanceId::from_str(&id_str).map_err(|e| ServerError::BadRequest(e.to_string()))?;
-    state.daemon().start_instance(&id).await.map_err(ServerError::from)?;
+    state
+        .daemon()
+        .start_instance(&id)
+        .await
+        .map_err(ServerError::from)?;
     Ok(StatusCode::OK)
 }
 
@@ -88,7 +174,11 @@ pub async fn stop_instance(
     Path(id_str): Path<String>,
 ) -> Result<StatusCode, ServerError> {
     let id = InstanceId::from_str(&id_str).map_err(|e| ServerError::BadRequest(e.to_string()))?;
-    state.daemon().stop_instance(&id).await.map_err(ServerError::from)?;
+    state
+        .daemon()
+        .stop_instance(&id)
+        .await
+        .map_err(ServerError::from)?;
     Ok(StatusCode::OK)
 }
 
@@ -100,7 +190,11 @@ pub async fn restart_instance(
     let id = InstanceId::from_str(&id_str).map_err(|e| ServerError::BadRequest(e.to_string()))?;
     let _ = state.daemon().stop_instance(&id).await;
     tokio::time::sleep(std::time::Duration::from_millis(200)).await;
-    state.daemon().start_instance(&id).await.map_err(ServerError::from)?;
+    state
+        .daemon()
+        .start_instance(&id)
+        .await
+        .map_err(ServerError::from)?;
     Ok(StatusCode::OK)
 }
 
@@ -110,7 +204,12 @@ pub async fn kill_instance(
     Path(id_str): Path<String>,
 ) -> Result<StatusCode, ServerError> {
     let _id = InstanceId::from_str(&id_str).map_err(|e| ServerError::BadRequest(e.to_string()))?;
-    state.daemon().supervisor().kill_all().await.map_err(|e| ServerError::Internal(e.to_string()))?;
+    state
+        .daemon()
+        .supervisor()
+        .kill_all()
+        .await
+        .map_err(|e| ServerError::Internal(e.to_string()))?;
     Ok(StatusCode::OK)
 }
 

@@ -11,8 +11,13 @@ pub use error::ClientError;
 pub use transport::Transport;
 
 use dart_protocol::console::{ConsoleCommandRequest, ConsoleLineDto};
-use dart_protocol::content::{ContentKindDto, ContentSearchHitDto, InstalledContentDto};
-use dart_protocol::instance::{CreateInstanceRequest, InstanceDto, InstanceStateDto};
+use dart_protocol::content::{
+    ContentInstallReportDto, ContentKindDto, ContentSearchHitDto, InstallContentRequest,
+    InstalledContentDto, RemoveContentRequest,
+};
+use dart_protocol::instance::{
+    CreateInstanceOptionsResponse, CreateInstanceRequest, InstanceDto, InstanceStateDto,
+};
 use dart_protocol::runtime::{DownloadRuntimeRequest, FabricRuntimeDto, ResolveRuntimeResponse};
 use dart_protocol::system::{HealthResponse, SystemInfoResponse};
 use http::Method;
@@ -50,19 +55,27 @@ impl DartClient {
 
     /// Checks daemon health and uptime.
     pub async fn health(&self) -> Result<HealthResponse, ClientError> {
-        let bytes = self.transport.request(Method::GET, "/api/v1/health", None).await?;
+        let bytes = self
+            .transport
+            .request(Method::GET, "/api/v1/health", None)
+            .await?;
         serde_json::from_slice(&bytes).map_err(|e| ClientError::Serialization(e.to_string()))
     }
 
     /// Fetches system information and metrics.
     pub async fn system_info(&self) -> Result<SystemInfoResponse, ClientError> {
-        let bytes = self.transport.request(Method::GET, "/api/v1/system", None).await?;
+        let bytes = self
+            .transport
+            .request(Method::GET, "/api/v1/system", None)
+            .await?;
         serde_json::from_slice(&bytes).map_err(|e| ClientError::Serialization(e.to_string()))
     }
 
     /// Requests graceful shutdown of the daemon service.
     pub async fn shutdown(&self) -> Result<(), ClientError> {
-        self.transport.request(Method::POST, "/api/v1/system/shutdown", None).await?;
+        self.transport
+            .request(Method::POST, "/api/v1/system/shutdown", None)
+            .await?;
         Ok(())
     }
 
@@ -70,7 +83,10 @@ impl DartClient {
 
     /// Lists all managed instances with their live execution state.
     pub async fn list_instances(&self) -> Result<Vec<InstanceDto>, ClientError> {
-        let bytes = self.transport.request(Method::GET, "/api/v1/instances", None).await?;
+        let bytes = self
+            .transport
+            .request(Method::GET, "/api/v1/instances", None)
+            .await?;
         serde_json::from_slice(&bytes).map_err(|e| ClientError::Serialization(e.to_string()))
     }
 
@@ -86,11 +102,22 @@ impl DartClient {
         &self,
         request: &CreateInstanceRequest,
     ) -> Result<InstanceDto, ClientError> {
-        let body = serde_json::to_vec(request)
-            .map_err(|e| ClientError::Serialization(e.to_string()))?;
+        let body =
+            serde_json::to_vec(request).map_err(|e| ClientError::Serialization(e.to_string()))?;
         let bytes = self
             .transport
             .request(Method::POST, "/api/v1/instances", Some(body))
+            .await?;
+        serde_json::from_slice(&bytes).map_err(|e| ClientError::Serialization(e.to_string()))
+    }
+
+    /// Lists the friendly choices accepted by the create-instance endpoint.
+    pub async fn create_instance_options(
+        &self,
+    ) -> Result<CreateInstanceOptionsResponse, ClientError> {
+        let bytes = self
+            .transport
+            .request(Method::GET, "/api/v1/instances/options", None)
             .await?;
         serde_json::from_slice(&bytes).map_err(|e| ClientError::Serialization(e.to_string()))
     }
@@ -139,7 +166,9 @@ impl DartClient {
             command: command.to_owned(),
         })
         .map_err(|e| ClientError::Serialization(e.to_string()))?;
-        self.transport.request(Method::POST, &path, Some(body)).await?;
+        self.transport
+            .request(Method::POST, &path, Some(body))
+            .await?;
         Ok(())
     }
 
@@ -161,7 +190,10 @@ impl DartClient {
 
     /// Lists cached Fabric runtimes on disk.
     pub async fn list_runtimes(&self) -> Result<Vec<FabricRuntimeDto>, ClientError> {
-        let bytes = self.transport.request(Method::GET, "/api/v1/runtimes", None).await?;
+        let bytes = self
+            .transport
+            .request(Method::GET, "/api/v1/runtimes", None)
+            .await?;
         serde_json::from_slice(&bytes).map_err(|e| ClientError::Serialization(e.to_string()))
     }
 
@@ -183,8 +215,8 @@ impl DartClient {
         &self,
         request: &DownloadRuntimeRequest,
     ) -> Result<FabricRuntimeDto, ClientError> {
-        let body = serde_json::to_vec(request)
-            .map_err(|e| ClientError::Serialization(e.to_string()))?;
+        let body =
+            serde_json::to_vec(request).map_err(|e| ClientError::Serialization(e.to_string()))?;
         let bytes = self
             .transport
             .request(Method::POST, "/api/v1/runtimes/download", Some(body))
@@ -202,7 +234,9 @@ impl DartClient {
     ) -> Result<Vec<InstalledContentDto>, ClientError> {
         let path = match kind {
             Some(ContentKindDto::Mod) => format!("/api/v1/instances/{id}/content?kind=mod"),
-            Some(ContentKindDto::DataPack) => format!("/api/v1/instances/{id}/content?kind=data_pack"),
+            Some(ContentKindDto::DataPack) => {
+                format!("/api/v1/instances/{id}/content?kind=data_pack")
+            }
             Some(ContentKindDto::ResourcePack) => {
                 format!("/api/v1/instances/{id}/content?kind=resource_pack")
             }
@@ -227,6 +261,37 @@ impl DartClient {
         let path = format!("/api/v1/instances/{id}/content/search?query={query}&kind={kind_str}");
         let bytes = self.transport.request(Method::GET, &path, None).await?;
         serde_json::from_slice(&bytes).map_err(|e| ClientError::Serialization(e.to_string()))
+    }
+
+    /// Installs the newest compatible release of a Modrinth project.
+    pub async fn install_content(
+        &self,
+        id: &str,
+        request: &InstallContentRequest,
+    ) -> Result<ContentInstallReportDto, ClientError> {
+        let path = format!("/api/v1/instances/{id}/content/install");
+        let body =
+            serde_json::to_vec(request).map_err(|e| ClientError::Serialization(e.to_string()))?;
+        let bytes = self
+            .transport
+            .request(Method::POST, &path, Some(body))
+            .await?;
+        serde_json::from_slice(&bytes).map_err(|e| ClientError::Serialization(e.to_string()))
+    }
+
+    /// Removes an add-on tracked by Dart.
+    pub async fn remove_content(
+        &self,
+        id: &str,
+        request: &RemoveContentRequest,
+    ) -> Result<(), ClientError> {
+        let path = format!("/api/v1/instances/{id}/content/remove");
+        let body =
+            serde_json::to_vec(request).map_err(|e| ClientError::Serialization(e.to_string()))?;
+        self.transport
+            .request(Method::POST, &path, Some(body))
+            .await?;
+        Ok(())
     }
 
     // --- Console WebSocket Attach ---
@@ -266,7 +331,8 @@ impl DartClient {
     /// Subscribes to the daemon's global event stream.
     pub async fn subscribe_events(
         &self,
-    ) -> Result<tokio::sync::broadcast::Receiver<dart_protocol::event::DaemonEvent>, ClientError> {
+    ) -> Result<tokio::sync::broadcast::Receiver<dart_protocol::event::DaemonEvent>, ClientError>
+    {
         let (tx, rx) = tokio::sync::broadcast::channel(1024);
         match &self.transport {
             Transport::Unix(socket_path) => {
