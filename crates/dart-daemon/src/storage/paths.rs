@@ -32,6 +32,11 @@ impl DartPaths {
     pub fn fabric_runtimes_dir(&self) -> PathBuf {
         self.home.join("runtimes").join("fabric")
     }
+
+    /// Returns the local Unix domain socket path (`$DART_HOME/dartd.sock`).
+    pub fn socket_path(&self) -> PathBuf {
+        self.home.join("dartd.sock")
+    }
 }
 
 #[cfg(test)]
@@ -48,5 +53,6 @@ mod tests {
             paths.fabric_runtimes_dir(),
             PathBuf::from("dart-data/runtimes/fabric")
         );
+        assert_eq!(paths.socket_path(), PathBuf::from("dart-data/dartd.sock"));
     }
 }

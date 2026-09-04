@@ -243,6 +243,26 @@ impl Instance {
     pub fn config(&self) -> &InstanceConfig {
         &self.config
     }
+
+    /// Converts this instance and its live state into a wire DTO.
+    pub fn to_dto(&self, state: &InstanceState) -> dart_protocol::instance::InstanceDto {
+        dart_protocol::instance::InstanceDto {
+            id: self.id.to_string(),
+            name: self.config.name.to_string(),
+            root: self.root.display().to_string(),
+            config: dart_protocol::instance::InstanceConfigDto {
+                format_version: self.config.format_version,
+                name: self.config.name.to_string(),
+                launch: dart_protocol::instance::FabricLaunchDto {
+                    java: self.config.launch.java.display().to_string(),
+                    min_memory_mib: self.config.launch.min_memory_mib,
+                    max_memory_mib: self.config.launch.max_memory_mib,
+                },
+                fabric: (&self.config.fabric).into(),
+            },
+            state: state.into(),
+        }
+    }
 }
 
 /// Current lifecycle status of an instance process.
@@ -264,6 +284,20 @@ pub enum InstanceState {
         /// Explanation of failure.
         message: String,
     },
+}
+
+impl From<&InstanceState> for dart_protocol::instance::InstanceStateDto {
+    fn from(state: &InstanceState) -> Self {
+        match state {
+            InstanceState::Stopped => Self::Stopped,
+            InstanceState::Starting => Self::Starting,
+            InstanceState::Running { pid } => Self::Running { pid: *pid },
+            InstanceState::Stopping => Self::Stopping,
+            InstanceState::Failed { message } => Self::Failed {
+                message: message.clone(),
+            },
+        }
+    }
 }
 
 /// Errors that occur when validating instance properties or configuration.

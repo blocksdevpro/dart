@@ -1,0 +1,68 @@
+---
+title: Storage Layout & Paths
+description: On-disk filesystem organization, DartPaths specification, and instance isolation.
+---
+
+Dart enforces a clean, deterministic directory layout. The [`DartPaths`](file:///home/uttam/dart/crates/dart-daemon/src/storage/paths.rs#L11) struct serves as the single source of truth for all filesystem paths.
+
+---
+
+## Directory Hierarchy
+
+All runtime state, cached launchers, and instance servers are contained beneath `$DART_HOME`:
+
+```text
+$DART_HOME/
+├── instances/
+│   ├── survival-121/
+│   │   ├── dart.toml               # Instance configuration (version 2)
+│   │   ├── eula.txt                # eula=true
+│   │   ├── server.properties       # Minecraft server settings & port
+│   │   ├── mods/                   # Fabric mod JARs
+│   │   │   ├── fabric-api-*.jar
+│   │   │   └── lithium-*.jar
+│   │   ├── world/                  # Level dimensions & player data
+│   │   └── logs/
+│   │       └── latest.log
+│   └── creative-test/
+│       ├── dart.toml
+│       └── ...
+└── runtimes/
+    └── fabric/
+        ├── 1.21.4-0.16.10-1.0.1/
+        │   └── fabric-server-launch.jar
+        └── 1.20.1-0.16.9-1.0.1/
+            └── fabric-server-launch.jar
+```
+
+---
+
+## Path Resolution Rules
+
+When resolving `$DART_HOME`, Dart checks sources in this strict order:
+
+1. **CLI Flag**: `--home <directory>`
+2. **Environment Variable**: `DART_HOME`
+3. **XDG User Data**: `XDG_DATA_HOME/dart` (defaults to `~/.local/share/dart` on Linux)
+4. **Platform Default**:
+   * **Linux**: `~/.local/share/dart`
+   * **macOS**: `~/Library/Application Support/dart`
+   * **Windows**: `%LOCALAPPDATA%\dart`
+
+---
+
+## Instance Isolation & Portability
+
+### Complete Sandbox
+Each instance lives in its own dedicated directory under `instances/<id>/`. When the server is executed, Dart sets the working directory directly to that folder:
+* Log files (`logs/latest.log`) and crash reports stay within the instance.
+* Mod config files (`config/*.json`, `config/*.toml`) never contaminate other instances.
+* World saves (`world/`) are completely self-contained.
+
+### Backing Up or Migrating
+Because an instance contains all its configuration and data, backing up or cloning a server is as simple as copying its directory:
+
+```bash
+# Snapshot an instance
+cp -r ~/.local/share/dart/instances/survival ~/backups/survival-$(date +%F)
+```

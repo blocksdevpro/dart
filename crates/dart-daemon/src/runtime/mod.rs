@@ -92,6 +92,16 @@ impl FabricRuntime {
     }
 }
 
+impl From<&FabricRuntime> for dart_protocol::runtime::FabricRuntimeDto {
+    fn from(runtime: &FabricRuntime) -> Self {
+        Self {
+            minecraft: runtime.minecraft.to_string(),
+            loader: runtime.loader.to_string(),
+            installer: runtime.installer.to_string(),
+        }
+    }
+}
+
 impl fmt::Display for FabricRuntime {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(

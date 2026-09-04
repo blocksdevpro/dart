@@ -523,15 +523,27 @@ impl App {
         }
     }
 
+    pub fn update_state(&mut self, id: InstanceId, state: InstanceState) {
+        self.states.insert(id, state);
+    }
+
+    pub fn append_console_line(&mut self, id: InstanceId, stream: OutputStream, line: String) {
+        let lines = self.console.entry(id).or_default();
+        lines.push_back(ConsoleEntry { stream, line });
+        while lines.len() > MAX_CONSOLE_LINES {
+            lines.pop_front();
+        }
+    }
+
     pub fn begin_quit(&mut self) {
         self.quitting = true;
-        self.set_notice(NoticeKind::Info, "Stopping running instances before exit");
     }
 
     pub fn is_quitting(&self) -> bool {
         self.quitting
     }
 
+    #[allow(dead_code)]
     pub fn has_active_instances(&self) -> bool {
         self.states.values().any(|state| {
             matches!(

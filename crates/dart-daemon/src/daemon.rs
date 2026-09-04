@@ -222,6 +222,15 @@ impl Daemon {
             .map_err(DaemonError::Supervisor)
     }
 
+    /// Returns the most recent in-memory console log entries for an instance.
+    pub fn recent_logs(
+        &self,
+        id: &InstanceId,
+        count: Option<usize>,
+    ) -> Vec<crate::process::ConsoleLineRecord> {
+        self.supervisor.recent_logs(id, count)
+    }
+
     // --- Runtime Operations ---
 
     /// Lists all cached Fabric runtimes on disk.

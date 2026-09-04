@@ -1,0 +1,166 @@
+---
+title: Installation
+description: How to install and set up Dart on Linux, macOS, and Windows.
+---
+
+import { Tabs, Tab } from 'fumadocs-ui/components/tabs';
+import { Step, Steps } from 'fumadocs-ui/components/steps';
+
+This guide covers system prerequisites, installing the Dart binary, and configuring environment variables.
+
+---
+
+## Prerequisites
+
+Before running Dart, ensure your system meets the following requirements:
+
+### 1. Java Runtime Environment (JRE / JDK)
+Minecraft Fabric servers require a compatible Java runtime to launch:
+
+| Minecraft Version | Required Java Version | Recommended Package |
+| :--- | :--- | :--- |
+| **Minecraft 1.20.5 – 1.21.x** | **Java 21** | Eclipse Temurin 21 or OpenJDK 21 |
+| **Minecraft 1.18 – 1.20.4** | **Java 17** | Eclipse Temurin 17 or OpenJDK 17 |
+| **Minecraft 1.16 – 1.17** | **Java 16** | OpenJDK 16 |
+| **Legacy (< 1.16)** | **Java 8** | OpenJDK 8 |
+
+Verify your active Java installation:
+```bash
+java -version
+```
+
+### 2. Rust Toolchain (For Source Builds)
+Dart is written in modern Rust (**Rust 2024 edition**, Rust 1.85+). If compiling from source:
+
+```bash
+# Install rustup if not present
+curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
+rustc --version
+```
+
+### 3. Terminal Emulator
+Dart's Terminal UI is built with **Ratatui** and **Crossterm**. For the best visual experience (true 24-bit color, Unicode borders, responsive re-rendering), use a modern terminal:
+* **Linux**: Ghostty, Alacritty, Kitty, WezTerm, GNOME Terminal
+* **macOS**: Ghostty, iTerm2, Kitty, Terminal.app
+* **Windows**: Windows Terminal (via WSL2 or Native PowerShell)
+
+---
+
+## Installing Dart
+
+<Tabs items={['Build from Source', 'Cargo Install', 'Prebuilt Binaries']}>
+  <Tab value="Build from Source">
+    <Steps>
+      <Step>
+        #### Clone the repository
+        ```bash
+        git clone https://github.com/blocksdevpro/dart.git
+        cd dart
+        ```
+      </Step>
+      <Step>
+        #### Build optimized release binary
+        ```bash
+        cargo build --release
+        ```
+        The compiled binary will be placed at `./target/release/dart`.
+      </Step>
+      <Step>
+        #### Install to your system PATH
+        You can copy the binary to `/usr/local/bin` or install it directly with Cargo:
+        ```bash
+        cargo install --path .
+        ```
+      </Step>
+    </Steps>
+  </Tab>
+
+  <Tab value="Cargo Install">
+    Install Dart directly from the Git repository using Cargo:
+
+    ```bash
+    cargo install --git https://github.com/blocksdevpro/dart.git
+    ```
+
+    Ensure your Cargo bin directory (`~/.cargo/bin`) is in your shell's `$PATH`:
+
+    ```bash
+    export PATH="$HOME/.cargo/bin:$PATH"
+    ```
+  </Tab>
+
+  <Tab value="Prebuilt Binaries">
+    Download the appropriate tarball/archive for your architecture from the GitHub Releases page:
+
+    ```bash
+    # Example for Linux x86_64
+    curl -LO https://github.com/blocksdevpro/dart/releases/latest/download/dart-linux-x86_64.tar.gz
+    tar -xzf dart-linux-x86_64.tar.gz
+    sudo mv dart /usr/local/bin/
+    chmod +x /usr/local/bin/dart
+    ```
+  </Tab>
+</Tabs>
+
+---
+
+## Verifying Installation
+
+Verify that the `dart` binary is correctly registered and reachable in your terminal:
+
+```bash
+dart help
+```
+
+Output:
+```text
+Dart manages local Fabric server instances.
+
+Usage:
+  dart [--home <directory>]                           Open the TUI
+  dart [--home <directory>] list                      List instances
+  dart [--home <directory>] create <id> <name...>
+       [--minecraft <version> | --runtime <mc/loader/installer>] [--accept-eula]
+  dart [--home <directory>] runtimes list             List cached launchers
+  dart [--home <directory>] runtimes download [mc]    Cache a launcher
+  dart help                                           Show this help
+
+Create downloads the newest stable Fabric runtime by default.
+DART_HOME overrides the default data directory.
+```
+
+---
+
+## Configuration & Environment Variables
+
+Dart respects standard XDG directory specifications while providing simple environment overrides:
+
+| Variable | Description | Default Value |
+| :--- | :--- | :--- |
+| `DART_HOME` | Primary data directory for server instances, cached Fabric runtimes, and configs. | Linux: `$XDG_DATA_HOME/dart` (or `~/.local/share/dart`)<br/>macOS: `~/Library/Application Support/dart`<br/>Windows: `%LOCALAPPDATA%\dart` |
+| `XDG_DATA_HOME` | Standard Linux user data directory. | `~/.local/share` |
+| `HOME` | User home fallback if `XDG_DATA_HOME` is unset. | `~` |
+
+You can also override the home directory per-invocation using the `--home` CLI flag:
+
+```bash
+dart --home /mnt/fast-nvme/minecraft-servers list
+```
+
+---
+
+## Troubleshooting
+
+### "java: command not found"
+The Dart daemon process supervisor launches Minecraft server instances using your system's `java` binary. If Java is installed in a non-standard directory, ensure it is added to your environment `PATH` in `~/.bashrc` or `~/.zshrc`:
+
+```bash
+export PATH="/opt/jdk-21/bin:$PATH"
+```
+
+### Terminal colors appear broken in TUI
+Ensure your terminal emulator defines `COLORTERM`:
+```bash
+export TERM=xterm-256color
+export COLORTERM=truecolor
+```

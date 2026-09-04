@@ -1,0 +1,12 @@
+{
+  "title": "Daemon Architecture",
+  "icon": "Cpu",
+  "pages": [
+    "index",
+    "instances",
+    "supervisor",
+    "runtimes",
+    "content",
+    "storage"
+  ]
+}

@@ -1,0 +1,97 @@
+---
+title: Quickstart
+description: Create and run your first Minecraft Fabric server in under 60 seconds with Dart.
+---
+
+import { Step, Steps } from 'fumadocs-ui/components/steps';
+import { CommandBuilder } from '@/components/CommandBuilder';
+
+This quickstart will take you from zero to a running Fabric Minecraft server with live log streaming.
+
+---
+
+## Step 1: Create a Server Instance
+
+Use the `dart create` command to set up a new Fabric server instance. Dart automatically contacts the **Fabric Meta API**, resolves the latest stable loader and installer versions, generates the isolated instance directory, and sets up the server launcher.
+
+<CommandBuilder />
+
+For example, to create a server named `survival` for Minecraft 1.21.4 with the EULA pre-accepted:
+
+```bash
+dart create survival "Survival 1.21.4" --minecraft 1.21.4 --accept-eula
+```
+
+### Command Arguments Explained
+
+* **`survival`**: The unique `InstanceId` (alphanumeric with hyphens, 1-64 characters).
+* **`"Survival 1.21.4"`**: The human-readable display name.
+* **`--minecraft 1.21.4`**: Specifies the Minecraft game version. If omitted, Dart defaults to the latest stable Fabric release.
+* **`--accept-eula`**: Automatically signs `eula.txt` so the server can boot without manual edits.
+
+---
+
+## Step 2: Verify Your Instance
+
+List all managed instances to verify that your new instance was successfully created:
+
+```bash
+dart list
+```
+
+Example output:
+```text
+Available instances in ~/.local/share/dart/instances:
+  survival       "Survival 1.21.4" (Minecraft 1.21.4, Loader 0.16.10) [STOPPED]
+```
+
+---
+
+## Step 3: Launch the TUI Dashboard
+
+Start the Dart interactive terminal interface:
+
+```bash
+dart
+```
+
+Once inside the TUI:
+1. **Navigate**: Use the <kbd>↑</kbd> and <kbd>↓</kbd> arrow keys to highlight `survival`.
+2. **Start Server**: Press <kbd>Enter</kbd> (or <kbd>s</kbd>) to boot the instance.
+3. **Watch Logs**: The main pane will instantly begin streaming live server initialization logs.
+4. **Browse Mods**: Press <kbd>m</kbd> to inspect installed mods.
+5. **Exit TUI**: Press <kbd>q</kbd> or <kbd>Ctrl+C</kbd>. The server process will continue running in the background safely supervised by the daemon!
+
+---
+
+## Step 4: Connect from Minecraft
+
+Launch your Minecraft client with the matching Fabric game version (e.g. `1.21.4`), navigate to **Multiplayer > Direct Connection**, and enter:
+
+```text
+localhost:25565
+```
+
+You're in! Your Fabric server is running locally under full Dart supervision.
+
+---
+
+## Next Steps
+
+<Cards>
+  <Card
+    title="CLI Reference"
+    description="Learn all flags, custom home directories, and runtime caching commands."
+    href="/docs/cli"
+  />
+  <Card
+    title="TUI Guide"
+    description="Master keyboard shortcuts, real-time log tailing, and server controls."
+    href="/docs/tui"
+  />
+  <Card
+    title="Daemon Internals"
+    description="Understand how dart-daemon isolates processes and manages state."
+    href="/docs/daemon"
+  />
+</Cards>

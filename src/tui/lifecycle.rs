@@ -25,7 +25,16 @@ pub async fn run(
     let supervisor = daemon.supervisor().clone();
     let instances = service.list_instances()?;
     let runtimes = service.list_runtimes()?;
-    let mut app = App::new(instances, runtimes);
+    let mut app = App::new(instances.clone(), runtimes);
+    for instance in &instances {
+        let state = supervisor.state(instance.id());
+        if state != crate::InstanceState::Stopped {
+            app.update_state(instance.id().clone(), state);
+        }
+        for record in supervisor.recent_logs(instance.id(), Some(100)) {
+            app.append_console_line(instance.id().clone(), record.stream, record.line);
+        }
+    }
     let (download_tx, mut download_rx) = mpsc::channel::<DownloadEvent>(4);
     let (mod_tx, mut mod_rx) = mpsc::channel::<ModEvent>(4);
 
@@ -109,7 +118,7 @@ async fn event_loop(
             apply_mod_event(app, event);
         }
 
-        if app.is_quitting() && !app.has_active_instances() {
+        if app.is_quitting() {
             return Ok(());
         }
 

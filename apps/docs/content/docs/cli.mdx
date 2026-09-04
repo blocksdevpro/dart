@@ -1,0 +1,120 @@
+---
+title: CLI Reference
+description: Complete command-line interface specification, subcommands, and flags for Dart.
+---
+
+The Dart Command-Line Interface provides scriptable, headless control over Fabric instances and runtimes.
+
+---
+
+## Global Syntax
+
+```bash
+dart [--home <directory>] [COMMAND]
+```
+
+### Global Options
+
+* **`--home <directory>`**: Overrides the default data directory (`$DART_HOME`). Useful when storing instances on dedicated fast drives (e.g. `/mnt/nvme/minecraft`).
+
+---
+
+## Commands
+
+### `dart` (Default)
+When invoked with no command, Dart opens the interactive **Ratatui Terminal UI**:
+
+```bash
+dart
+# or with a custom data directory
+dart --home /path/to/data
+```
+
+---
+
+### `dart list`
+Lists all managed instances, showing their Minecraft version, Fabric loader version, and current execution state:
+
+```bash
+dart list
+```
+
+Example output:
+```text
+Available instances in ~/.local/share/dart/instances:
+  survival       "Survival SMP"      (Minecraft 1.21.4, Loader 0.16.10) [RUNNING - PID 41829]
+  creative-lab   "Redstone Lab"      (Minecraft 1.21.1, Loader 0.16.9)  [STOPPED]
+```
+
+---
+
+### `dart create`
+Creates and initializes a new Fabric server instance.
+
+```bash
+dart create <id> <name...> [OPTIONS]
+```
+
+#### Arguments
+* **`<id>`**: Valid identifier (1-64 ASCII characters, lowercase letters, numbers, and hyphens).
+* **`<name...>`**: Display name (can contain spaces and special characters).
+
+#### Options
+* **`--minecraft <version>`**: Target Minecraft release version (e.g., `1.21.4`, `1.20.1`). Defaults to the newest stable release if omitted.
+* **`--runtime <mc/loader/installer>`**: Explicitly specifies the exact runtime triplet instead of resolving latest loaders (e.g., `1.21.4/0.16.10/1.0.1`).
+* **`--accept-eula`**: Automatically writes `eula=true` to the instance's `eula.txt`.
+
+#### Examples
+```bash
+# Create with latest stable Fabric
+dart create vanilla-plus "Vanilla+ 1.21" --accept-eula
+
+# Create targeting Minecraft 1.20.1
+dart create modded-120 "Modded Adventure" --minecraft 1.20.1 --accept-eula
+
+# Create with an exact loader version
+dart create test "Test Server" --runtime 1.21.4/0.16.10/1.0.1
+```
+
+---
+
+### `dart runtimes list`
+Lists all cached Fabric launcher JARs stored locally on disk:
+
+```bash
+dart runtimes list
+```
+
+Example output:
+```text
+Cached Fabric runtimes in ~/.local/share/dart/runtimes/fabric:
+  - Minecraft 1.21.4, Loader 0.16.10, Installer 1.0.1
+  - Minecraft 1.20.1, Loader 0.16.9,  Installer 1.0.1
+```
+
+---
+
+### `dart runtimes download`
+Downloads and caches the official Fabric server launcher JAR without creating a server instance.
+
+```bash
+dart runtimes download [minecraft-version]
+```
+
+#### Examples
+```bash
+# Download launcher for Minecraft 1.21.4
+dart runtimes download 1.21.4
+
+# Download launcher for the newest stable Minecraft release
+dart runtimes download
+```
+
+---
+
+### `dart help`
+Prints quick usage instructions and exits with status `0`:
+
+```bash
+dart help
+```

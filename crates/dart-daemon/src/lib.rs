@@ -28,8 +28,12 @@ pub use daemon::Daemon;
 pub use error::DaemonError;
 pub use instance::{
     CreateInstance, EulaAcceptance, FabricLaunch, Instance, InstanceConfig, InstanceId,
-    InstanceName, InstanceService, InstanceState, InstanceStore, RuntimeRequest,
+    InstanceIdError, InstanceName, InstanceService, InstanceState, InstanceStore,
+    InstanceValidationError, RuntimeRequest,
 };
-pub use process::{OutputStream, ServerEvent, ServerSupervisor, SupervisorUnavailable};
-pub use runtime::{FabricClient, FabricRuntime, FabricVersion, RuntimeStore};
+pub use process::{
+    ConsoleLineRecord, OutputStream, ServerEvent, ServerSupervisor, SupervisorCommand,
+    SupervisorUnavailable,
+};
+pub use runtime::{FabricClient, FabricRuntime, FabricVersion, RuntimeError, RuntimeStore};
 pub use storage::DartPaths;

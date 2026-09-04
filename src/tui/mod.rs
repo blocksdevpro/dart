@@ -72,7 +72,7 @@ pub(super) async fn handle_key(
     mod_tx: &mpsc::Sender<ModEvent>,
 ) {
     if key.code == KeyCode::Char('c') && key.modifiers.contains(KeyModifiers::CONTROL) {
-        begin_quit(app, supervisor).await;
+        begin_quit(app);
         return;
     }
 
@@ -130,12 +130,16 @@ async fn handle_dashboard_key(
         }
         KeyCode::Char('r') => match service.list_instances() {
             Ok(instances) => {
+                for instance in &instances {
+                    let state = supervisor.state(instance.id());
+                    app.update_state(instance.id().clone(), state);
+                }
                 app.replace_instances(instances);
                 app.set_notice(NoticeKind::Success, "Instance list reloaded");
             }
             Err(error) => app.set_notice(NoticeKind::Error, error.to_string()),
         },
-        KeyCode::Char('q') => begin_quit(app, supervisor).await,
+        KeyCode::Char('q') => begin_quit(app),
         _ => {}
     }
 }
@@ -775,19 +779,8 @@ fn create_instance(app: &mut App, service: &InstanceService) {
     }
 }
 
-async fn begin_quit(app: &mut App, supervisor: &ServerSupervisor) {
-    if app.is_quitting() {
-        app.set_notice(NoticeKind::Info, "Forcing running instances to exit");
-        if let Err(error) = supervisor.kill_all().await {
-            app.set_notice(NoticeKind::Error, error.to_string());
-        }
-        return;
-    }
-
+fn begin_quit(app: &mut App) {
     app.begin_quit();
-    if let Err(error) = supervisor.stop_all().await {
-        app.set_notice(NoticeKind::Error, error.to_string());
-    }
 }
 
 fn draw(frame: &mut Frame<'_>, app: &App) {

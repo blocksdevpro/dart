@@ -2,18 +2,27 @@
 members = [
     ".",
     "crates/dart-daemon",
+    "crates/dart-protocol",
+    "crates/dart-server",
+    "crates/dart-client",
+]
+default-members = [
+    ".",
+    "crates/dart-server",
 ]
 resolver = "2"
 
 [workspace.dependencies]
+axum = { version = "0.8.9", features = ["ws", "json"] }
 crossterm = "0.29.0"
 ratatui = "0.30.2"
 reqwest = { version = "0.13.4", default-features = false, features = ["json", "rustls"] }
 serde = { version = "1.0.229", features = ["derive"] }
 serde_json = "1.0.149"
 sha2 = "0.10.9"
-tokio = { version = "1.53.1", features = ["macros", "rt-multi-thread", "process", "io-util", "sync", "time", "signal"] }
+tokio = { version = "1.53.1", features = ["macros", "rt-multi-thread", "process", "io-util", "sync", "time", "signal", "net"] }
 toml = "1.1.4"
+tower-http = { version = "0.7.1", features = ["cors", "trace"] }
 
 [package]
 name = "dart"
@@ -23,6 +32,9 @@ rust-version = "1.85"
 
 [dependencies]
 dart-daemon = { path = "crates/dart-daemon" }
+dart-client = { path = "crates/dart-client" }
+dart-protocol = { path = "crates/dart-protocol" }
+dart-server = { path = "crates/dart-server" }
 crossterm = { workspace = true }
 ratatui = { workspace = true }
 tokio = { workspace = true }

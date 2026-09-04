@@ -148,6 +148,11 @@ impl ModProject {
     pub fn title(&self) -> &str {
         &self.title
     }
+
+    /// Returns the project URL slug if available.
+    pub fn slug(&self) -> Option<&str> {
+        self.slug.as_deref()
+    }
 }
 
 /// A single hit in Modrinth mod search results.

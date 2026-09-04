@@ -2,7 +2,7 @@
 
 use crate::instance::{Instance, InstanceId, InstanceState};
 use crate::runtime::FABRIC_LAUNCHER_FILE;
-use std::collections::HashMap;
+use std::collections::{HashMap, VecDeque};
 use std::io;
 use std::process::Stdio;
 use std::sync::{Arc, RwLock};
@@ -14,6 +14,9 @@ use tokio::sync::{broadcast, mpsc};
 const COMMAND_CAPACITY: usize = 64;
 const EVENT_CAPACITY: usize = 1024;
 
+/// Maximum number of recent console lines retained in memory per instance.
+pub const LOG_RING_BUFFER_CAPACITY: usize = 500;
+
 /// Target stream for console text emitted by a server process.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum OutputStream {
@@ -21,6 +24,38 @@ pub enum OutputStream {
     Stdout,
     /// Standard error stream.
     Stderr,
+}
+
+impl From<OutputStream> for dart_protocol::console::OutputStreamDto {
+    fn from(stream: OutputStream) -> Self {
+        match stream {
+            OutputStream::Stdout => Self::Stdout,
+            OutputStream::Stderr => Self::Stderr,
+        }
+    }
+}
+
+/// An in-memory timestamped console line entry.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ConsoleLineRecord {
+    /// Stream source (`stdout` or `stderr`).
+    pub stream: OutputStream,
+    /// Raw line text.
+    pub line: String,
+    /// Milliseconds since Unix epoch.
+    pub timestamp_millis: u64,
+}
+
+impl ConsoleLineRecord {
+    /// Converts this record into a protocol DTO for an instance.
+    pub fn to_dto(&self, instance_id: &InstanceId) -> dart_protocol::console::ConsoleLineDto {
+        dart_protocol::console::ConsoleLineDto {
+            id: instance_id.to_string(),
+            stream: self.stream.into(),
+            line: self.line.clone(),
+            timestamp_millis: self.timestamp_millis,
+        }
+    }
 }
 
 /// Events emitted by server processes and the supervisor.
@@ -51,7 +86,9 @@ pub enum ServerEvent {
     },
 }
 
-enum SupervisorCommand {
+/// Commands that can be dispatched to a server supervisor implementation.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum SupervisorCommand {
     Start(Instance),
     Stop(InstanceId),
     StopAll,
@@ -65,24 +102,43 @@ pub struct ServerSupervisor {
     commands: mpsc::Sender<SupervisorCommand>,
     events: broadcast::Sender<ServerEvent>,
     states: Arc<RwLock<HashMap<InstanceId, InstanceState>>>,
+    logs: Arc<RwLock<HashMap<InstanceId, VecDeque<ConsoleLineRecord>>>>,
 }
 
 impl ServerSupervisor {
+    /// Constructs a supervisor handle from custom channels and shared state locks.
+    pub fn from_channels(
+        commands: mpsc::Sender<SupervisorCommand>,
+        events: broadcast::Sender<ServerEvent>,
+        states: Arc<RwLock<HashMap<InstanceId, InstanceState>>>,
+        logs: Arc<RwLock<HashMap<InstanceId, VecDeque<ConsoleLineRecord>>>>,
+    ) -> Self {
+        Self {
+            commands,
+            events,
+            states,
+            logs,
+        }
+    }
+
     /// Spawns the supervisor background loop and returns a handle and primary event receiver.
     pub fn spawn() -> (Self, broadcast::Receiver<ServerEvent>) {
         let (command_tx, command_rx) = mpsc::channel(COMMAND_CAPACITY);
         let (event_tx, event_rx) = broadcast::channel(EVENT_CAPACITY);
         let states = Arc::new(RwLock::new(HashMap::new()));
+        let logs = Arc::new(RwLock::new(HashMap::new()));
         tokio::spawn(run_supervisor(
             command_rx,
             event_tx.clone(),
             Arc::clone(&states),
+            Arc::clone(&logs),
         ));
         (
             Self {
                 commands: command_tx,
                 events: event_tx,
                 states,
+                logs,
             },
             event_rx,
         )
@@ -100,6 +156,20 @@ impl ServerSupervisor {
             .ok()
             .and_then(|states| states.get(id).cloned())
             .unwrap_or(InstanceState::Stopped)
+    }
+
+    /// Returns the most recent console log records retained in memory for an instance.
+    pub fn recent_logs(&self, id: &InstanceId, count: Option<usize>) -> Vec<ConsoleLineRecord> {
+        let lock = match self.logs.read() {
+            Ok(lock) => lock,
+            Err(_) => return Vec::new(),
+        };
+        let Some(deque) = lock.get(id) else {
+            return Vec::new();
+        };
+        let limit = count.unwrap_or(LOG_RING_BUFFER_CAPACITY).min(deque.len());
+        let start = deque.len().saturating_sub(limit);
+        deque.iter().skip(start).cloned().collect()
     }
 
     /// Starts a managed server instance.
@@ -162,6 +232,7 @@ async fn run_supervisor(
     mut commands: mpsc::Receiver<SupervisorCommand>,
     events: broadcast::Sender<ServerEvent>,
     states: Arc<RwLock<HashMap<InstanceId, InstanceState>>>,
+    logs: Arc<RwLock<HashMap<InstanceId, VecDeque<ConsoleLineRecord>>>>,
 ) {
     let mut running = HashMap::<InstanceId, RunningServer>::new();
     let mut exit_check = tokio::time::interval(Duration::from_millis(100));
@@ -172,7 +243,7 @@ async fn run_supervisor(
             command = commands.recv() => {
                 match command {
                     Some(SupervisorCommand::Start(instance)) => {
-                        start_instance(instance, &mut running, &events, &states).await;
+                        start_instance(instance, &mut running, &events, &states, &logs).await;
                     }
                     Some(SupervisorCommand::Stop(id)) => {
                         stop_instance(&id, &mut running, &events, &states).await;
@@ -215,10 +286,19 @@ async fn start_instance(
     running: &mut HashMap<InstanceId, RunningServer>,
     events: &broadcast::Sender<ServerEvent>,
     states: &Arc<RwLock<HashMap<InstanceId, InstanceState>>>,
+    logs: &Arc<RwLock<HashMap<InstanceId, VecDeque<ConsoleLineRecord>>>>,
 ) {
     let id = instance.id().clone();
     if let Some(server) = running.get(&id) {
-        send_state(events, states, id, server.state.clone());
+        send_state(events, states, id.clone(), server.state.clone());
+        let message = match server.state {
+            InstanceState::Stopping => {
+                "instance is stopping; wait for it to exit or stop again to force kill"
+            }
+            InstanceState::Running { .. } => "instance is already running",
+            _ => "instance is already starting",
+        };
+        send_failure(events, id, message.to_owned());
         return;
     }
 
@@ -296,6 +376,7 @@ async fn start_instance(
             OutputStream::Stdout,
             stdout,
             events.clone(),
+            Arc::clone(logs),
         ));
     }
     if let Some(stderr) = stderr {
@@ -304,6 +385,7 @@ async fn start_instance(
             OutputStream::Stderr,
             stderr,
             events.clone(),
+            Arc::clone(logs),
         ));
     }
 }
@@ -350,6 +432,13 @@ async fn stop_instance(
         return;
     };
     if matches!(server.state, InstanceState::Stopping) {
+        if let Err(error) = server.child.start_kill() {
+            send_failure(
+                events,
+                id.clone(),
+                format!("cannot terminate Fabric: {error}"),
+            );
+        }
         return;
     }
 
@@ -471,6 +560,7 @@ async fn read_output<R>(
     stream: OutputStream,
     reader: R,
     events: broadcast::Sender<ServerEvent>,
+    logs: Arc<RwLock<HashMap<InstanceId, VecDeque<ConsoleLineRecord>>>>,
 ) where
     R: tokio::io::AsyncRead + Unpin,
 {
@@ -478,6 +568,23 @@ async fn read_output<R>(
     loop {
         match lines.next_line().await {
             Ok(Some(line)) => {
+                let timestamp_millis = std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .map(|d| d.as_millis() as u64)
+                    .unwrap_or(0);
+
+                if let Ok(mut lock) = logs.write() {
+                    let deque = lock.entry(id.clone()).or_default();
+                    if deque.len() >= LOG_RING_BUFFER_CAPACITY {
+                        deque.pop_front();
+                    }
+                    deque.push_back(ConsoleLineRecord {
+                        stream,
+                        line: line.clone(),
+                        timestamp_millis,
+                    });
+                }
+
                 let _ = events.send(ServerEvent::ConsoleLine {
                     id: id.clone(),
                     stream,
@@ -594,6 +701,10 @@ mod tests {
             )
         })
         .await;
+
+        let logs = supervisor.recent_logs(&id, None);
+        assert!(logs.iter().any(|entry| entry.line == "ready"));
+        assert!(logs.iter().any(|entry| entry.line == "command:say hello"));
 
         supervisor.stop(id).await.unwrap();
         wait_for(&mut events, |event| {
